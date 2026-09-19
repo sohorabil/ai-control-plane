@@ -1,0 +1,369 @@
+{
+  "project": "Enterprise AI Control Plane",
+  "trainee": "Tukrim Sohorabil",
+  "days": 14,
+  "spend_cap_usd": 20,
+  "protocol": {
+    "one_part_at_a_time": true,
+    "name_tool_and_why": true,
+    "ask_before_paid_resources": true,
+    "stop_and_wait_for": "next",
+    "understanding_check_after_each_part": {
+      "questions": [
+        "What did we build and how does it connect to what already existed?",
+        "Why this tool, and why not the obvious alternative?",
+        "Use cases of this tool in our scenario, plus one real-world use case elsewhere"
+      ],
+      "wait_for_answers": true,
+      "give_feedback": true,
+      "reask_missed_idea_once": true,
+      "user_can_skip": "skip check"
+    },
+    "progress_file": "PROGRESS.md",
+    "status_triggers": [
+      "where are we?",
+      "status",
+      "how far?"
+    ],
+    "status_format": [
+      "Now",
+      "Done",
+      "Next",
+      "Spend so far + running now",
+      "Understanding checks",
+      "Open issues"
+    ],
+    "status_max_lines": 8
+  },
+  "clouds": {
+    "cloudflare": "edge + AI edge",
+    "aws": "platform runtime + Claude via Bedrock",
+    "gcp": "Gemini + BigQuery"
+  },
+  "eks_days": [
+    9,
+    13
+  ],
+  "telemetry_fields": [
+    "request_id",
+    "app",
+    "provider",
+    "model",
+    "input_tokens",
+    "output_tokens",
+    "latency_ms",
+    "cost_usd",
+    "status",
+    "fallback"
+  ],
+  "toolbox": [
+    {
+      "need": "AI engineering copilot",
+      "tool": "Claude Code in VS Code",
+      "secret_or_identity": "CLAUDE.md"
+    },
+    {
+      "need": "edge front door, key check, rate limit",
+      "tool": "Cloudflare Worker + WAF",
+      "secret_or_identity": "EDGE_SECRET"
+    },
+    {
+      "need": "private ingress",
+      "tool": "Cloudflare Tunnel",
+      "secret_or_identity": "TUNNEL_TOKEN"
+    },
+    {
+      "need": "provider logs/caching/analytics",
+      "tool": "Cloudflare AI Gateway",
+      "secret_or_identity": "CF_ACCOUNT_ID, CF_AIG_NAME"
+    },
+    {
+      "need": "cheap open model + safety classifier",
+      "tool": "Workers AI",
+      "secret_or_identity": "CF_API_TOKEN"
+    },
+    {
+      "need": "core API",
+      "tool": "Python + FastAPI",
+      "secret_or_identity": null
+    },
+    {
+      "need": "Claude production path",
+      "tool": "Amazon Bedrock",
+      "secret_or_identity": "AWS IAM role"
+    },
+    {
+      "need": "Claude comparison path (optional)",
+      "tool": "Anthropic API",
+      "secret_or_identity": "ANTHROPIC_API_KEY"
+    },
+    {
+      "need": "GPT models",
+      "tool": "OpenAI API",
+      "secret_or_identity": "OPENAI_API_KEY"
+    },
+    {
+      "need": "Gemini + embeddings",
+      "tool": "Vertex AI",
+      "secret_or_identity": "Workload Identity Federation"
+    },
+    {
+      "need": "records, audit, vectors",
+      "tool": "Postgres + pgvector / Amazon RDS",
+      "secret_or_identity": "DATABASE_URL"
+    },
+    {
+      "need": "cache, quotas, breaker",
+      "tool": "Redis",
+      "secret_or_identity": "REDIS_URL"
+    },
+    {
+      "need": "analytics warehouse",
+      "tool": "BigQuery",
+      "secret_or_identity": "read-only SA via WIF"
+    },
+    {
+      "need": "packaging",
+      "tool": "Docker + Compose",
+      "secret_or_identity": null
+    },
+    {
+      "need": "local Kubernetes",
+      "tool": "kind + kubectl + Helm",
+      "secret_or_identity": null
+    },
+    {
+      "need": "production Kubernetes",
+      "tool": "Amazon EKS + Pod Identity",
+      "secret_or_identity": "Pod Identity role"
+    },
+    {
+      "need": "registry",
+      "tool": "Amazon ECR",
+      "secret_or_identity": "IAM"
+    },
+    {
+      "need": "production secrets",
+      "tool": "AWS Secrets Manager + External Secrets",
+      "secret_or_identity": "IAM"
+    },
+    {
+      "need": "infrastructure as code",
+      "tool": "Terraform (aws + google)",
+      "secret_or_identity": "AWS profile, gcloud ADC"
+    },
+    {
+      "need": "source control",
+      "tool": "GitHub + gh CLI",
+      "secret_or_identity": "GH token"
+    },
+    {
+      "need": "CI/CD",
+      "tool": "Jenkins",
+      "secret_or_identity": "Jenkins credentials"
+    },
+    {
+      "need": "security scanning",
+      "tool": "Trivy",
+      "secret_or_identity": null
+    },
+    {
+      "need": "observability",
+      "tool": "OpenTelemetry + Prometheus + Grafana",
+      "secret_or_identity": null
+    },
+    {
+      "need": "load testing",
+      "tool": "k6",
+      "secret_or_identity": "demo client key"
+    },
+    {
+      "need": "docs",
+      "tool": "Markdown + Mermaid",
+      "secret_or_identity": null
+    }
+  ],
+  "parts": [
+    {
+      "part": 1,
+      "day": 1,
+      "title": "Live front door + first AI answer",
+      "stakeholder": "CTO",
+      "tools": [
+        "Cloudflare Worker",
+        "Cloudflare Tunnel",
+        "FastAPI",
+        "Cloudflare AI Gateway",
+        "Workers AI"
+      ],
+      "done_when": "curl via Worker with key returns AI answer; without key 401"
+    },
+    {
+      "part": 2,
+      "day": 2,
+      "title": "One API, four models",
+      "stakeholder": "VP Eng",
+      "tools": [
+        "Bedrock",
+        "Vertex AI",
+        "OpenAI",
+        "Workers AI",
+        "Postgres"
+      ],
+      "done_when": "playground shows all providers with latency + cost; usage rows accumulate"
+    },
+    {
+      "part": 3,
+      "day": 3,
+      "title": "AI engineering toolkit",
+      "stakeholder": "Product lead",
+      "tools": [
+        "FastAPI",
+        "Pydantic",
+        "SSE",
+        "multimodal (PDF/image)"
+      ],
+      "done_when": "schema-valid JSON, streaming, tool call works; invoice PDF/photo fields extracted"
+    },
+    {
+      "part": 4,
+      "day": 4,
+      "title": "Smart routing + resilience",
+      "stakeholder": "CFO",
+      "tools": [
+        "Redis",
+        "routing.yaml"
+      ],
+      "done_when": "mock 429 triggers fallback; repeat prompt hits cache"
+    },
+    {
+      "part": 5,
+      "day": 5,
+      "title": "Security + guardrails",
+      "stakeholder": "CISO",
+      "tools": [
+        "Postgres",
+        "Workers AI (Llama Guard)",
+        "Workload Identity Federation"
+      ],
+      "done_when": "PII redacted/blocked and audited; model allow-list enforced; no GCP key file"
+    },
+    {
+      "part": 6,
+      "day": 6,
+      "title": "Evals + model migration",
+      "stakeholder": "CFO",
+      "tools": [
+        "eval runner",
+        "LLM-as-judge",
+        "routing.yaml canary"
+      ],
+      "done_when": "scorecard current vs candidate; bad prompt fails eval"
+    },
+    {
+      "part": 7,
+      "day": 7,
+      "title": "RAG platform",
+      "stakeholder": "Support manager",
+      "tools": [
+        "Vertex embeddings",
+        "pgvector",
+        "Postgres full-text search",
+        "reranker"
+      ],
+      "done_when": "cited answers; hit@k for two chunk sizes; vector vs hybrid vs hybrid+rerank compared"
+    },
+    {
+      "part": 8,
+      "day": 8,
+      "title": "Containers, local Kubernetes, Terraform plan",
+      "stakeholder": "Platform lead",
+      "tools": [
+        "Docker",
+        "kind",
+        "Helm",
+        "Terraform"
+      ],
+      "done_when": "runs in kind via Tunnel; terraform plan explained"
+    },
+    {
+      "part": 9,
+      "day": 9,
+      "title": "EKS key day 1",
+      "stakeholder": "CTO",
+      "tools": [
+        "Terraform",
+        "ECR",
+        "EKS",
+        "RDS",
+        "Secrets Manager",
+        "Pod Identity"
+      ],
+      "done_when": "Worker URL answers from EKS; destroy leaves nothing billable"
+    },
+    {
+      "part": 10,
+      "day": 10,
+      "title": "CI/CD with AI gates",
+      "stakeholder": "VP Eng",
+      "tools": [
+        "GitHub",
+        "Jenkins",
+        "Trivy"
+      ],
+      "done_when": "broken prompt PR blocked; good PR promotes"
+    },
+    {
+      "part": 11,
+      "day": 11,
+      "title": "Observability + AI FinOps",
+      "stakeholder": "CFO",
+      "tools": [
+        "OpenTelemetry",
+        "Prometheus",
+        "Grafana",
+        "BigQuery",
+        "vendor-switch drill"
+      ],
+      "done_when": "cost by app/model visible; cost spike traced; one workload moved to a cheaper provider with measured saving"
+    },
+    {
+      "part": 12,
+      "day": 12,
+      "title": "Agent platform + Data Analyst Agent",
+      "stakeholder": "Head of Data",
+      "tools": [
+        "agent runtime",
+        "MCP",
+        "BigQuery",
+        "feedback loop"
+      ],
+      "done_when": "question answered; DELETE or huge scan refused; thumbs-down answer becomes a golden case after review"
+    },
+    {
+      "part": 13,
+      "day": 13,
+      "title": "SRE Incident Copilot + production demo",
+      "stakeholder": "SRE lead",
+      "tools": [
+        "agent runtime",
+        "Prometheus",
+        "kubectl",
+        "EKS",
+        "k6"
+      ],
+      "done_when": "copilot names bad deploy; approved rollback; recovery verified"
+    },
+    {
+      "part": 14,
+      "day": 14,
+      "title": "Capstone",
+      "stakeholder": "CEO",
+      "tools": [
+        "Markdown",
+        "Mermaid"
+      ],
+      "done_when": "stranger can understand, run and demo from the repo"
+    }
+  ]
+}
