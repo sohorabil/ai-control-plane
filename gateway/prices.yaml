@@ -1,0 +1,20 @@
+# USD per 1,000 tokens. Update as pricing changes; used only to estimate cost_usd.
+mock:
+  input_per_1k: 0.0
+  output_per_1k: 0.0
+
+workers_ai:
+  input_per_1k: 0.0
+  output_per_1k: 0.0
+
+bedrock:
+  input_per_1k: 0.0008
+  output_per_1k: 0.004
+
+vertex:
+  input_per_1k: 0.000075
+  output_per_1k: 0.0003
+
+openai:
+  input_per_1k: 0.00015
+  output_per_1k: 0.0006
