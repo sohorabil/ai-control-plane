@@ -19,4 +19,9 @@ async def chat(prompt: str) -> str:
         resp.raise_for_status()
         data = resp.json()
 
-    return data["result"]["response"]
+    result = data["result"]
+    # Some Workers AI models return {"response": "..."}; newer ones return
+    # OpenAI-style {"choices": [{"message": {"content": "..."}}]}.
+    if "response" in result:
+        return result["response"]
+    return result["choices"][0]["message"]["content"]
