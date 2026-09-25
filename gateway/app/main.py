@@ -1,13 +1,15 @@
 import uuid
 
-from fastapi import FastAPI, Header, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
 from app.config import EDGE_SECRET
 from app.db import SessionLocal, Usage, init_db
 from app.pricing import cost_usd
+from app.prompts import load_prompt
 from app.providers import bedrock, mock, openai, vertex, workers_ai
+from app.structured import chat_structured, extract_structured_from_document
 
 app = FastAPI(title="AI Control Plane Gateway")
 
@@ -18,6 +20,12 @@ PROVIDERS = {
     "vertex": vertex,
     "openai": openai,
 }
+
+# Only providers with chat_stream() implemented so far.
+STREAMING_PROVIDERS = {"mock": mock, "vertex": vertex}
+
+# Only providers with chat_with_tools() implemented so far.
+TOOL_PROVIDERS = {"mock": mock, "bedrock": bedrock}
 
 MODEL_NAMES = {
     "mock": "mock-echo",
@@ -117,6 +125,128 @@ async def chat_playground(req: ChatRequest):
     # /playground page can call it directly for local, side-by-side testing.
     # It must never be used by real client apps — those go through /v1/chat.
     return await _run_chat(req)
+
+
+class TicketLookup(BaseModel):
+    ticket_id: str
+    status: str
+    subject: str
+
+
+class StructuredChatRequest(BaseModel):
+    prompt: str
+    provider: str = "vertex"
+
+
+@app.post("/v1/chat/structured")
+async def chat_structured_route(req: StructuredChatRequest):
+    if req.provider not in PROVIDERS:
+        raise HTTPException(status_code=400, detail=f"unknown provider: {req.provider}")
+
+    try:
+        parsed, result = await chat_structured(PROVIDERS[req.provider], req.prompt, TicketLookup)
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    return {
+        "provider": req.provider,
+        "data": parsed.model_dump(),
+        "latency_ms": result.latency_ms,
+        "cost_usd": cost_usd(req.provider, result.input_tokens, result.output_tokens),
+    }
+
+
+class StreamChatRequest(BaseModel):
+    prompt: str
+    provider: str = "mock"
+
+
+@app.post("/v1/chat/stream")
+async def chat_stream_route(req: StreamChatRequest):
+    if req.provider not in STREAMING_PROVIDERS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"provider '{req.provider}' does not support streaming yet",
+        )
+
+    async def event_source():
+        async for chunk in STREAMING_PROVIDERS[req.provider].chat_stream(req.prompt):
+            yield f"data: {chunk}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_source(), media_type="text/event-stream")
+
+
+class ToolChatRequest(BaseModel):
+    prompt: str
+    provider: str = "mock"
+    app_name: str = "playground"
+
+
+@app.post("/v1/chat/tools")
+async def chat_tools_route(req: ToolChatRequest):
+    if req.provider not in TOOL_PROVIDERS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"provider '{req.provider}' does not support tool calling yet",
+        )
+
+    request_id = str(uuid.uuid4())
+    try:
+        result = await TOOL_PROVIDERS[req.provider].chat_with_tools(req.prompt)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"{req.provider} call failed: {exc}")
+
+    _log_usage(request_id, req.app_name, req.provider, result, status="ok")
+
+    return {
+        "request_id": request_id,
+        "provider": req.provider,
+        "answer": result.answer,
+        "latency_ms": result.latency_ms,
+        "cost_usd": cost_usd(req.provider, result.input_tokens, result.output_tokens),
+    }
+
+
+class InvoiceFields(BaseModel):
+    vendor_name: str | None
+    invoice_number: str | None
+    total_amount: str | None
+    invoice_date: str | None
+
+
+DOCUMENT_PROVIDERS = {"vertex": vertex}
+
+
+@app.post("/v1/extract/document")
+async def extract_document(file: UploadFile = File(...), provider: str = "vertex"):
+    if provider not in DOCUMENT_PROVIDERS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"provider '{provider}' does not support document extraction yet",
+        )
+
+    prompt_template = load_prompt("extract_invoice", 1)
+    file_bytes = await file.read()
+    mime_type = file.content_type or "application/octet-stream"
+
+    try:
+        parsed, result = await extract_structured_from_document(
+            DOCUMENT_PROVIDERS[provider],
+            prompt_template["system"],
+            file_bytes,
+            mime_type,
+            InvoiceFields,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    return {
+        "provider": provider,
+        "data": parsed.model_dump(),
+        "latency_ms": result.latency_ms,
+        "cost_usd": cost_usd(provider, result.input_tokens, result.output_tokens),
+    }
 
 
 @app.get("/playground", response_class=HTMLResponse)
