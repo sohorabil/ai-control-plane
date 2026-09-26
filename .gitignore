@@ -26,3 +26,6 @@ dist/
 # os / editor
 .DS_Store
 .vscode/
+
+# Claude Code harness internals
+.claude/

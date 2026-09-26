@@ -1,13 +1,15 @@
 # task type -> ordered list of providers to try, in order, until one succeeds.
-# Bedrock/OpenAI are commented out until their account billing is fixed —
-# add them back into the chain (no code changes needed) once that's done.
+# All 5 providers are confirmed working as of 2026-09-26 (AWS Marketplace
+# payment + OpenAI credits both resolved). Cheapest/fastest tried first;
+# Bedrock (Claude Haiku) is a stronger but pricier fallback before the free
+# mock provider as the last resort.
 tasks:
   chat:
     candidates:
       - workers_ai
-      # - bedrock
       - vertex
-      # - openai
+      - openai
+      - bedrock
       - mock
     quality_floor: 0.0       # placeholder until Part 6 evals give us a real score
     latency_budget_ms: 5000
@@ -16,6 +18,8 @@ tasks:
     candidates:
       - workers_ai
       - vertex
+      - openai
+      - bedrock
       - mock
     quality_floor: 0.0
     latency_budget_ms: 5000

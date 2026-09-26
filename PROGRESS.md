@@ -3,9 +3,9 @@
 📍 Now: Part 4 of 14 — Smart routing + resilience — COMPLETE. Waiting for "next" to start Part 5.
 ✅ Done: Part 1 (edge front door); Part 2 (provider adapters, usage logging); Part 3 (structured output, streaming, tools, extraction); Part 4 (routing.yaml, retry/fallback, circuit breaker, Redis cache)
 ⏭ Next: Part 5 — Security + guardrails (per-app API keys, PII detection, prompt-injection checks, audit log, edge rate limit, Vertex WIF)
-💰 Spend so far: <$0.01 (small Vertex + one OpenAI call; Bedrock still blocked before any billable call succeeded) · ☁️ Running now: local FastAPI gateway (port 8000), cloudflared quick tunnel, local Postgres + Redis via Docker Compose
+💰 Spend so far: <$0.01 (small Vertex/OpenAI/Bedrock verification calls) · ☁️ Running now: local FastAPI gateway (port 8000), cloudflared quick tunnel, local Postgres + Redis via Docker Compose
 🎓 Understanding checks: passed 4 / done 4 (skipped: none) — each part needed at least one re-ask/re-explanation, all resolved
-⚠️ Open issues: quick tunnel URL is ephemeral (changes on restart); Bedrock still blocked on AWS Marketplace payment propagation (payment method added, not yet reflected — rechecking); OpenAI now confirmed working (credits added 2026-09-26); prompt caching (Bedrock-only) deferred until Bedrock unblocked
+⚠️ Open issues: quick tunnel URL is ephemeral (changes on restart); prompt caching (Bedrock-native) still not built — was deferred until Bedrock worked, now unblocked, can revisit as a small follow-up whenever
 
 ---
 
@@ -51,7 +51,7 @@
 - Break-it test: requesting a nonexistent provider name → clean `400 unknown provider: ...`, no crash.
 - Understanding check: Q2 (why Postgres not a log file/Redis) and Q3 (adapter pattern use case) answered correctly. Q1 conflated wrangler (Cloudflare-only, Part 1) with the Part 2 provider credentials, and didn't yet distinguish Bedrock/Vertex as "cloud-identity front doors to a model" vs. being AI systems themselves — re-explained, trainee acknowledged understanding.
 - Open follow-up (not blocking): retest Bedrock once AWS payment method is added; retest OpenAI once account has credits. No code changes expected — just re-run the existing playground test for those two providers.
-- **Update (2026-09-26)**: OpenAI retested after trainee added account credits — confirmed working end-to-end through `/v1/chat/playground`, correct tokens/cost tracked ($0.00000315 for the test call). No code changes were needed, exactly as expected. 4 of 5 providers now fully verified; only Bedrock remains, blocked on AWS Marketplace payment propagation.
+- **Update (2026-09-26)**: OpenAI retested after trainee added account credits — confirmed working end-to-end through `/v1/chat/playground`, correct tokens/cost tracked ($0.00000315 for the test call). Bedrock retested after AWS Marketplace payment method finished propagating — confirmed working for both basic chat and Part 3's tool-calling (`get_ticket`) through the real gateway, correct tokens/cost tracked (tool-calling call cost $0.0014, matching Claude's pricier tier vs. cheap providers). **All 5 providers now fully verified end-to-end: mock, Workers AI, Vertex, OpenAI, Bedrock.** No code changes were needed for either — exactly as the "code now, verify later" approach anticipated. Re-enabled Bedrock and OpenAI in `routing.yaml`'s real `chat`/`support_chat` fallback chains (previously commented out).
 
 ### Part 3 — AI engineering toolkit
 - Status: DONE
