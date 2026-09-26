@@ -1,11 +1,11 @@
 # PROGRESS
 
-📍 Now: Part 2 of 14 — One API, four models — COMPLETE. Waiting for "next" to start Part 3.
-✅ Done: Part 1 (edge front door + first AI answer); Part 2 (provider adapters for mock/Workers AI/Bedrock/Vertex/OpenAI, Postgres usage logging, playground)
-⏭ Next: Part 3 — AI engineering toolkit (structured output, streaming/SSE, tool calling, prompt caching, prompt registry, multimodal document extraction)
-💰 Spend so far: <$0.01 (estimated — one Vertex test call; Bedrock/OpenAI blocked before any billable call succeeded) · ☁️ Running now: local FastAPI gateway (port 8000), cloudflared quick tunnel, local Postgres via Docker Compose
-🎓 Understanding checks: passed 2 / done 2 (skipped: none) — Part 1 Q3 needed one re-ask (tunnel direction); Part 2 Q1 needed one re-explanation (what Bedrock/Vertex actually are vs. wrangler)
-⚠️ Open issues: quick tunnel URL is ephemeral (changes on restart) — wrangler.toml GATEWAY_URL must be updated + Worker redeployed if it restarts; Bedrock blocked on AWS payment method; OpenAI blocked on account credits — both to be retested once resolved (code already built for both)
+📍 Now: Part 3 of 14 — AI engineering toolkit — COMPLETE. Waiting for "next" to start Part 4.
+✅ Done: Part 1 (edge front door); Part 2 (provider adapters, Postgres usage logging, playground); Part 3 (structured output, streaming, tool calling, document extraction, prompt registry)
+⏭ Next: Part 4 — Smart routing + resilience (routing.yaml, timeouts/retries/fallback chain, Redis cache + quota + circuit breaker)
+💰 Spend so far: <$0.01 (a handful of small Vertex calls across Parts 2–3; Bedrock/OpenAI still blocked before any billable call succeeded) · ☁️ Running now: local FastAPI gateway (port 8000), cloudflared quick tunnel, local Postgres via Docker Compose
+🎓 Understanding checks: passed 3 / done 3 (skipped: none) — each part needed one re-ask/re-explanation, all resolved
+⚠️ Open issues: quick tunnel URL is ephemeral (changes on restart) — wrangler.toml GATEWAY_URL must be updated + Worker redeployed if it restarts; Bedrock blocked on AWS payment method; OpenAI blocked on account credits; prompt caching (Bedrock-only) deferred until Bedrock unblocked
 
 ---
 
@@ -51,3 +51,24 @@
 - Break-it test: requesting a nonexistent provider name → clean `400 unknown provider: ...`, no crash.
 - Understanding check: Q2 (why Postgres not a log file/Redis) and Q3 (adapter pattern use case) answered correctly. Q1 conflated wrangler (Cloudflare-only, Part 1) with the Part 2 provider credentials, and didn't yet distinguish Bedrock/Vertex as "cloud-identity front doors to a model" vs. being AI systems themselves — re-explained, trainee acknowledged understanding.
 - Open follow-up (not blocking): retest Bedrock once AWS payment method is added; retest OpenAI once account has credits. No code changes expected — just re-run the existing playground test for those two providers.
+
+### Part 3 — AI engineering toolkit
+- Status: DONE
+- Tools used: Pydantic (schema validation), FastAPI StreamingResponse (SSE), Claude native tool-use (Bedrock), Vertex multimodal input, PyYAML (prompt registry)
+- Spend: a handful of small Vertex calls (structured output + streaming + document extraction tests), each fractions of a cent
+- What was built:
+  - `gateway/app/structured.py` — schema-validate-and-retry helper used by both `/v1/chat/structured` and `/v1/extract/document`; strips markdown code fences before parsing
+  - `/v1/chat/stream` — SSE streaming, implemented for mock and Vertex (`chat_stream` added to both)
+  - `/v1/chat/tools` — tool calling, implemented for mock and Bedrock (`chat_with_tools` added to both), backed by a fake in-memory `get_ticket` tool in `app/tools.py`
+  - `/v1/extract/document` — multimodal PDF/image extraction via Vertex (`chat_with_document` added to `vertex.py`), reusing the schema-retry path
+  - `gateway/prompts/` — versioned prompt registry (`extract_invoice_v1.yaml`), loaded via `app/prompts.py`
+  - `gateway/tests/fixtures/` — synthetic test invoice (PDF + JPEG "photo" version) generated for testing extraction
+- Issues hit and resolved:
+  - Gemini wrapped JSON answers in ` ```json ` markdown fences despite explicit "no other text" instructions — first structured-output test failed with a JSON parse error; fixed by stripping fences before `json.loads`, verified against the real failure and the fix
+  - `python-multipart` was needed for FastAPI file uploads — not caught until the `/v1/extract/document` route was added
+  - Needed `poppler` (pdftoppm) to generate a "phone photo" test image from the PDF fixture
+- Verification result: all four done-when criteria from the brief confirmed — `/v1/extract` always returns schema-valid JSON (including all-null for a non-invoice file, not hallucinated data); `/v1/chat/stream` streams for both mock and Vertex; a tool call resolves both valid and invalid ticket IDs; the same sample invoice as PDF and as a simulated photo both returned identical, correct fields. Retry logic itself directly verified against a fake provider that fails twice before succeeding.
+- Break-it test: uploaded a plain text file (not an invoice) to `/v1/extract/document` → returned schema-valid JSON with all fields `null`, not fabricated data.
+- Understanding check: Q1 (streaming vs tool-calling distinction) needed clarification — trainee initially conflated the two; re-explained with a UI mockup showing both stages ("thinking..." indicator, then either instant full-answer or live word-by-word typing). Q2 (why retry/validation logic exists) and Q3 (why null-not-hallucinated matters) both needed re-explanation with the real bug we hit (Gemini's markdown-fence JSON) shown visually, plus a hospital lab-report scenario for real-world stakes. All three passed after visual + scenario explanation.
+- Standing preference established this part (saved to memory): explain every feature via four scenario lenses (end user / company owner / client app / builder) AND a realistic UI/UX mockup as an Artifact — not abstract technical diagrams. Both together, always, going forward — ask which combination fits if unsure.
+- Deferred (not blocking): prompt caching (Bedrock/Claude-native) — logged as a follow-up rather than writing untested code, since it depends on Bedrock being unblocked.
