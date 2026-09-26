@@ -1,11 +1,11 @@
 # PROGRESS
 
-📍 Now: Part 3 of 14 — AI engineering toolkit — COMPLETE. Waiting for "next" to start Part 4.
-✅ Done: Part 1 (edge front door); Part 2 (provider adapters, Postgres usage logging, playground); Part 3 (structured output, streaming, tool calling, document extraction, prompt registry)
-⏭ Next: Part 4 — Smart routing + resilience (routing.yaml, timeouts/retries/fallback chain, Redis cache + quota + circuit breaker)
-💰 Spend so far: <$0.01 (a handful of small Vertex calls across Parts 2–3; Bedrock/OpenAI still blocked before any billable call succeeded) · ☁️ Running now: local FastAPI gateway (port 8000), cloudflared quick tunnel, local Postgres via Docker Compose
-🎓 Understanding checks: passed 3 / done 3 (skipped: none) — each part needed one re-ask/re-explanation, all resolved
-⚠️ Open issues: quick tunnel URL is ephemeral (changes on restart) — wrangler.toml GATEWAY_URL must be updated + Worker redeployed if it restarts; Bedrock blocked on AWS payment method; OpenAI blocked on account credits; prompt caching (Bedrock-only) deferred until Bedrock unblocked
+📍 Now: Part 4 of 14 — Smart routing + resilience — COMPLETE. Waiting for "next" to start Part 5.
+✅ Done: Part 1 (edge front door); Part 2 (provider adapters, usage logging); Part 3 (structured output, streaming, tools, extraction); Part 4 (routing.yaml, retry/fallback, circuit breaker, Redis cache)
+⏭ Next: Part 5 — Security + guardrails (per-app API keys, PII detection, prompt-injection checks, audit log, edge rate limit, Vertex WIF)
+💰 Spend so far: <$0.01 (small Vertex calls across Parts 2–4; Bedrock/OpenAI still blocked before any billable call succeeded) · ☁️ Running now: local FastAPI gateway (port 8000), cloudflared quick tunnel, local Postgres + Redis via Docker Compose
+🎓 Understanding checks: passed 4 / done 4 (skipped: none) — each part needed at least one re-ask/re-explanation, all resolved
+⚠️ Open issues: quick tunnel URL is ephemeral (changes on restart); Bedrock blocked on AWS payment method; OpenAI blocked on account credits; prompt caching (Bedrock-only) deferred until Bedrock unblocked
 
 ---
 
@@ -72,3 +72,23 @@
 - Understanding check: Q1 (streaming vs tool-calling distinction) needed clarification — trainee initially conflated the two; re-explained with a UI mockup showing both stages ("thinking..." indicator, then either instant full-answer or live word-by-word typing). Q2 (why retry/validation logic exists) and Q3 (why null-not-hallucinated matters) both needed re-explanation with the real bug we hit (Gemini's markdown-fence JSON) shown visually, plus a hospital lab-report scenario for real-world stakes. All three passed after visual + scenario explanation.
 - Standing preference established this part (saved to memory): explain every feature via four scenario lenses (end user / company owner / client app / builder) AND a realistic UI/UX mockup as an Artifact — not abstract technical diagrams. Both together, always, going forward — ask which combination fits if unsure.
 - Deferred (not blocking): prompt caching (Bedrock/Claude-native) — logged as a follow-up rather than writing untested code, since it depends on Bedrock being unblocked.
+
+### Part 4 — Smart routing + resilience
+- Status: DONE
+- Tools used: Redis (Docker Compose, local), routing.yaml (task-type → provider chain config)
+- Spend: $0 (all fallback/breaker/cache testing used mock + workers_ai, both free)
+- What was built:
+  - `routing.yaml` — task types (`chat`, `support_chat`) mapped to an ordered provider fallback chain; retry count, backoff, and circuit-breaker thresholds as config; Bedrock/OpenAI present but commented out until billing is fixed
+  - `gateway/app/routing.py` — `call_with_fallback()`: retries each candidate with backoff+jitter, skips providers whose circuit breaker is open (tracked in Redis), raises a clear error if every candidate fails; response cache read/write via Redis, keyed by provider+prompt hash
+  - `gateway/app/redis_client.py` — shared Redis connection
+  - `/v1/chat/smart` — new route, same `EDGE_SECRET` auth as `/v1/chat`, routes by `task` instead of an explicit `provider`, cache-first
+  - Added a `FORCE_429` trigger phrase to `mock.chat()` so fallback/breaker behavior can be tested on demand without needing a real provider outage
+  - Two test-only routing.yaml tasks (`test_fallback`, `test_total_outage`) to exercise the fallback and total-failure paths deliberately
+- Verification result (matches brief's exact "done when" — forcing mock to 429 triggers fallback):
+  - Forced mock failure → retried twice, then fell through to `workers_ai`, which answered successfully; caller saw no error
+  - After repeated failures, mock's circuit breaker opened (confirmed via direct Redis inspection: `breaker:mock:failures` = 4, `breaker:mock:open` = 1) — next call skipped mock entirely and went straight to `workers_ai`
+  - Identical repeated prompt → second call returned `from_cache: true` with zero provider calls
+- Break-it test: a task with only one candidate, forced to fail every time → clean `502` with a detail list of every attempt, returned quickly — no hang, no crash, no infinite retry loop.
+- Understanding check: Q1 (what happens when the first provider is down) was missing the "retry the same provider first, then move to the next" detail. Q2 (why circuit breaker matters beyond retries) was answered incorrectly — trainee described a request queue, which isn't what we built; re-explained as "stop wasting time retrying a provider we already know is broken, for every subsequent request, for 30 seconds." Q3 (how caching saves money) was also off — trainee described general session memory; re-explained as "identical question asked twice = second time costs nothing," with an airline pricing-page analogy (many people searching the same route/date get served the same cached price). Trainee confirmed understanding after correction without needing a visual mockup this time.
+- Process note: mid-part, cleaned up leftover uncommitted code from an earlier abandoned interactive-demo attempt (mock's chat() had been slowed to 2s for a demo that was replaced by static Artifact mockups) — restored to normal fast timing, kept the otherwise-unused /demo/streaming route since it was already built and harmless.
+- Standing preference refined this part: build UI/UX mockups as before, but ASK before creating/publishing each one rather than auto-publishing; compile all mockups (shown or not) into one page at the end of the project instead of one-per-part.
