@@ -249,6 +249,97 @@ async def extract_document(file: UploadFile = File(...), provider: str = "vertex
     }
 
 
+@app.get("/demo/streaming", response_class=HTMLResponse)
+async def demo_streaming():
+    return """
+    <html>
+    <head><title>Streaming vs Non-Streaming Demo</title></head>
+    <body style="font-family: sans-serif; max-width: 700px; margin: 40px auto;">
+      <h2>See the difference: streaming vs non-streaming</h2>
+      <p>Same prompt, same provider (mock). Watch the timer on each side.</p>
+      <button onclick="runBoth()" style="font-size: 16px; padding: 8px 16px;">Run comparison</button>
+      <div style="display:flex; gap:20px; margin-top:20px;">
+        <div style="flex:1; border:2px solid #ccc; padding:15px; border-radius:8px;">
+          <h3>Non-streaming (/v1/chat)</h3>
+          <div id="normal-timer" style="color:#888;">not started</div>
+          <div id="normal-output" style="min-height:80px; margin-top:10px; font-size:18px;"></div>
+        </div>
+        <div style="flex:1; border:2px solid #4a90d9; padding:15px; border-radius:8px;">
+          <h3>Streaming (/v1/chat/stream)</h3>
+          <div id="stream-timer" style="color:#888;">not started</div>
+          <div id="stream-output" style="min-height:80px; margin-top:10px; font-size:18px;"></div>
+        </div>
+      </div>
+      <script>
+        const prompt = "Explain in one short sentence why the sky is blue during the day.";
+        // mock.chat() is intentionally fast (it's our free test provider used
+        // everywhere else too) — this demo adds its own artificial wait on
+        // the non-streaming side only, so the comparison stays visible
+        // without slowing down mock for every other test in the project.
+        const SIMULATED_THINKING_MS = 2000;
+
+        async function runNormal() {
+          const timerEl = document.getElementById("normal-timer");
+          const outEl = document.getElementById("normal-output");
+          outEl.innerText = "";
+          const start = performance.now();
+          timerEl.innerText = "waiting for the FULL answer...";
+          const [resp] = await Promise.all([
+            fetch("/v1/chat/playground", {
+              method: "POST",
+              headers: {"content-type": "application/json"},
+              body: JSON.stringify({prompt, provider: "mock", app_name: "demo"})
+            }),
+            new Promise(r => setTimeout(r, SIMULATED_THINKING_MS))
+          ]);
+          const data = await resp.json();
+          const elapsed = ((performance.now() - start) / 1000).toFixed(2);
+          timerEl.innerText = "First text appeared after: " + elapsed + "s (all at once)";
+          outEl.innerText = data.answer;
+        }
+
+        async function runStream() {
+          const timerEl = document.getElementById("stream-timer");
+          const outEl = document.getElementById("stream-output");
+          outEl.innerText = "";
+          const start = performance.now();
+          timerEl.innerText = "waiting for first word...";
+          const resp = await fetch("/v1/chat/stream", {
+            method: "POST",
+            headers: {"content-type": "application/json"},
+            body: JSON.stringify({prompt, provider: "mock"})
+          });
+          const reader = resp.body.getReader();
+          const decoder = new TextDecoder();
+          let firstWordTime = null;
+          while (true) {
+            const {done, value} = await reader.read();
+            if (done) break;
+            const chunk = decoder.decode(value);
+            for (const line of chunk.split("\\n")) {
+              if (line.startsWith("data: ")) {
+                const text = line.slice(6);
+                if (text === "[DONE]") continue;
+                if (firstWordTime === null) {
+                  firstWordTime = ((performance.now() - start) / 1000).toFixed(2);
+                  timerEl.innerText = "First word appeared after: " + firstWordTime + "s";
+                }
+                outEl.innerText += text;
+              }
+            }
+          }
+        }
+
+        function runBoth() {
+          runNormal();
+          runStream();
+        }
+      </script>
+    </body>
+    </html>
+    """
+
+
 @app.get("/playground", response_class=HTMLResponse)
 async def playground():
     return """

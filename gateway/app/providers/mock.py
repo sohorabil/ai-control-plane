@@ -54,5 +54,5 @@ async def chat_with_tools(prompt: str) -> ChatResult:
 async def chat_stream(prompt: str) -> AsyncIterator[str]:
     words = f"[mock stream] you said: {prompt}".split(" ")
     for word in words:
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.2)  # slow enough to visibly see words appear
         yield word + " "
