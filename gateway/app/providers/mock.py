@@ -7,9 +7,20 @@ from app.providers.base import ChatResult
 from app.tools import get_ticket
 
 
+class SimulatedRateLimitError(Exception):
+    """Raised when the prompt asks mock to simulate a provider outage — lets
+    us test retry/fallback/circuit-breaker behavior without needing a real
+    provider to actually be down.
+    """
+
+
 async def chat(prompt: str) -> ChatResult:
     start = time.perf_counter()
     await asyncio.sleep(0.1)  # pretend there's network latency
+
+    if "FORCE_429" in prompt:
+        raise SimulatedRateLimitError("mock: simulated 429 Too Many Requests")
+
     latency_ms = int((time.perf_counter() - start) * 1000)
 
     return ChatResult(

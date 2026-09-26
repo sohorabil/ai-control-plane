@@ -1,3 +1,4 @@
+import json
 import uuid
 
 from fastapi import FastAPI, File, Header, HTTPException, UploadFile
@@ -9,6 +10,7 @@ from app.db import SessionLocal, Usage, init_db
 from app.pricing import cost_usd
 from app.prompts import load_prompt
 from app.providers import bedrock, mock, openai, vertex, workers_ai
+from app.routing import AllProvidersFailedError, call_with_fallback, get_cached, set_cached
 from app.structured import chat_structured, extract_structured_from_document
 
 app = FastAPI(title="AI Control Plane Gateway")
@@ -125,6 +127,56 @@ async def chat_playground(req: ChatRequest):
     # /playground page can call it directly for local, side-by-side testing.
     # It must never be used by real client apps — those go through /v1/chat.
     return await _run_chat(req)
+
+
+class SmartChatRequest(BaseModel):
+    prompt: str
+    task: str = "chat"
+    app_name: str = "playground"
+
+
+@app.post("/v1/chat/smart")
+async def chat_smart(req: SmartChatRequest, x_edge_secret: str | None = Header(default=None)):
+    # Same auth as the real client-facing /v1/chat — this route is meant to
+    # be a production path too, just routed by task type instead of an
+    # explicit provider, with caching/retry/fallback/circuit-breaker built in.
+    if not EDGE_SECRET or x_edge_secret != EDGE_SECRET:
+        raise HTTPException(status_code=401, detail="missing or invalid edge secret")
+
+    first_provider = "workers_ai"  # cache key uses the first candidate for simplicity
+    cached = get_cached(first_provider, req.prompt)
+    if cached:
+        cached["from_cache"] = True
+        return cached
+
+    request_id = str(uuid.uuid4())
+    try:
+        provider_name, result, attempted = await call_with_fallback(
+            PROVIDERS, req.task, req.prompt
+        )
+    except AllProvidersFailedError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    _log_usage(
+        request_id,
+        req.app_name,
+        provider_name,
+        result,
+        status="ok",
+        fallback=None if len(attempted) == 1 else json.dumps(attempted),
+    )
+
+    payload = {
+        "request_id": request_id,
+        "provider": provider_name,
+        "answer": result.answer,
+        "latency_ms": result.latency_ms,
+        "cost_usd": cost_usd(provider_name, result.input_tokens, result.output_tokens),
+        "attempted": attempted,
+        "from_cache": False,
+    }
+    set_cached(first_provider, req.prompt, payload)
+    return payload
 
 
 class TicketLookup(BaseModel):

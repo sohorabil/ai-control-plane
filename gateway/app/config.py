@@ -25,3 +25,5 @@ OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 DATABASE_URL = os.environ.get(
     "DATABASE_URL", "postgresql+psycopg://eacp:eacp@localhost:5432/eacp"
 )
+
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")

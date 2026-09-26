@@ -1,0 +1,51 @@
+# task type -> ordered list of providers to try, in order, until one succeeds.
+# Bedrock/OpenAI are commented out until their account billing is fixed —
+# add them back into the chain (no code changes needed) once that's done.
+tasks:
+  chat:
+    candidates:
+      - workers_ai
+      # - bedrock
+      - vertex
+      # - openai
+      - mock
+    quality_floor: 0.0       # placeholder until Part 6 evals give us a real score
+    latency_budget_ms: 5000
+
+  support_chat:
+    candidates:
+      - workers_ai
+      - vertex
+      - mock
+    quality_floor: 0.0
+    latency_budget_ms: 5000
+
+  # Test-only task: mock is deliberately first so we can force it to fail
+  # (prompt containing FORCE_429) and prove the fallback to workers_ai works.
+  # Not used by any real client — verification/break-it tool only.
+  test_fallback:
+    candidates:
+      - mock
+      - workers_ai
+    quality_floor: 0.0
+    latency_budget_ms: 5000
+
+  # Test-only task: ONLY mock, so we can force total failure (every candidate
+  # broken) and confirm the system fails cleanly instead of hanging.
+  test_total_outage:
+    candidates:
+      - mock
+    quality_floor: 0.0
+    latency_budget_ms: 5000
+
+retry:
+  max_attempts_per_provider: 2
+  backoff_base_ms: 200
+  backoff_max_ms: 2000
+
+circuit_breaker:
+  failure_threshold: 3        # consecutive failures before opening the breaker
+  open_seconds: 30            # how long to skip a broken provider before retrying it
+
+cache:
+  ttl_seconds: 300
