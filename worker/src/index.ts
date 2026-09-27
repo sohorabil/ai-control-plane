@@ -10,7 +10,11 @@ export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
 		// x-app-key identifies which app is calling — the Worker does a fast,
 		// coarse check against the known-keys list; the gateway does the real
-		// per-app lookup (role, allowed providers) using this same header.
+		// per-app lookup (role, allowed providers) and rate limiting using
+		// this same header (see app/rate_limit.py — Cloudflare's native
+		// Workers rate-limiting binding was tried here first, but proved
+		// unreliable in testing: 100+ rapid requests against a 30/60s limit
+		// never once returned success:false).
 		const appKey = request.headers.get('x-app-key');
 		const validKeys = env.CLIENT_KEYS.split(',').map((k) => k.trim());
 

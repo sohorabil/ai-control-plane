@@ -5,4 +5,10 @@ compatibility_date = "2024-09-19"
 # EDGE_SECRET and CLIENT_KEYS are set with `wrangler secret put`, not here.
 # GATEWAY_URL points at the cloudflared tunnel hostname for the FastAPI gateway.
 [vars]
-GATEWAY_URL = "https://dan-kick-administration-general.trycloudflare.com"
+GATEWAY_URL = "https://influences-compilation-log-eddie.trycloudflare.com"
+
+# Rate limiting is enforced in the gateway (app/rate_limit.py, via Redis),
+# not here — Cloudflare's native Workers rate-limiting binding was tried
+# and removed after testing showed it never triggered (100+ rapid requests
+# against a 30/60s limit, always success:true). See git history for the
+# attempted [[ratelimits]] config.

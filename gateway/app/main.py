@@ -12,6 +12,7 @@ from app.guardrails import check_prompt_injection, redact_pii, scan_for_pii
 from app.pricing import cost_usd
 from app.prompts import load_prompt
 from app.providers import bedrock, mock, openai, vertex, workers_ai
+from app.rate_limit import check_rate_limit
 from app.routing import AllProvidersFailedError, call_with_fallback, get_cached, set_cached
 from app.structured import chat_structured, extract_structured_from_document
 
@@ -137,6 +138,7 @@ async def chat(
         raise HTTPException(status_code=401, detail="missing x-app-key")
     app_record = authenticate_app(x_app_key)
 
+    check_rate_limit(app_record.app_id)
     check_provider_allowed(app_record, req.provider)
 
     # Redact PII first so a safety classifier downstream (Llama Guard) never
