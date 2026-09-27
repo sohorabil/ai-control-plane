@@ -22,6 +22,36 @@ def get_candidates(task: str) -> list[str]:
     return task_config["candidates"]
 
 
+def get_quality_floor(task: str) -> float:
+    task_config = _config["tasks"].get(task, _config["tasks"]["chat"])
+    return task_config.get("quality_floor", 0.0)
+
+
+# --- canary rollout: route a % of one task's traffic to a candidate --------
+
+def get_canary_config() -> dict:
+    return _config.get("canary", {"candidate_weight": 0.0})
+
+
+def pick_ordered_candidates(task: str) -> list[str]:
+    """Normal candidate order, unless this task has an active canary
+    rollout — then a random slice of requests try the canary candidate
+    first instead, falling back to the normal order if it fails.
+    """
+    candidates = get_candidates(task)
+    canary = get_canary_config()
+
+    if canary.get("task") != task or canary.get("candidate_weight", 0.0) <= 0.0:
+        return candidates
+
+    if random.random() < canary["candidate_weight"]:
+        candidate = canary["candidate"]
+        reordered = [candidate] + [c for c in candidates if c != candidate]
+        return reordered
+
+    return candidates
+
+
 # --- circuit breaker: tracked per-provider in Redis -------------------------
 
 def _breaker_key(provider: str) -> str:
@@ -78,7 +108,7 @@ async def call_with_fallback(providers: dict, task: str, prompt: str):
     """
     attempted = []
 
-    for provider_name in get_candidates(task):
+    for provider_name in pick_ordered_candidates(task):
         if provider_name not in providers:
             continue
         if is_breaker_open(provider_name):

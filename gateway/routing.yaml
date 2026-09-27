@@ -11,7 +11,10 @@ tasks:
       - openai
       - bedrock
       - mock
-    quality_floor: 0.0       # placeholder until Part 6 evals give us a real score
+    # Measured via evals/scorecard.py on 2026-09-27: workers_ai scored 88% on
+    # the 30-case golden set. quality_floor is the minimum a candidate must
+    # score to be promoted out of canary (see `canary` section below).
+    quality_floor: 0.80
     latency_budget_ms: 5000
 
   support_chat:
@@ -21,7 +24,7 @@ tasks:
       - openai
       - bedrock
       - mock
-    quality_floor: 0.0
+    quality_floor: 0.80
     latency_budget_ms: 5000
 
   # Test-only task: mock is deliberately first so we can force it to fail
@@ -53,3 +56,14 @@ circuit_breaker:
 
 cache:
   ttl_seconds: 300
+
+# Canary rollout: send a small % of "chat" task traffic to a candidate
+# provider instead of the primary one, to test it on real traffic before
+# fully switching over. Set weight to 0 to disable; the eval-driven rollback
+# script (evals/canary_check.py) sets it back to 0 automatically if the
+# candidate's score falls below quality_floor.
+canary:
+  task: chat
+  primary: workers_ai
+  candidate: openai
+  candidate_weight: 0.0
