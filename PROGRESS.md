@@ -1,11 +1,11 @@
 # PROGRESS
 
-📍 Now: Part 6 of 14 — Evals + model migration — COMPLETE. Waiting for "next" to start Part 7.
-✅ Done: Part 1 (edge front door); Part 2 (provider adapters); Part 3 (structured output, streaming, tools, extraction); Part 4 (routing, fallback, breaker, cache); Part 5 (security + guardrails); Part 6 (eval runner, scorecard, canary rollout + auto-rollback)
-⏭ Next: Part 7 — RAG platform (docs/runbooks, ingestion + embeddings, pgvector, /v1/rag/ask with citations, hybrid search + reranker)
-💰 Spend so far: ~$0.02 (small provider calls across all parts, plus one full 4-provider scorecard run in Part 6) · ☁️ Running now: local FastAPI gateway (port 8000), cloudflared quick tunnel, local Postgres + Redis via Docker Compose
-🎓 Understanding checks: passed 5 / done 5 (skipped: none) — each part needed at least one re-ask/re-explanation, all resolved
-⚠️ Open issues: quick tunnel URL is ephemeral (changes on restart); prompt caching (Bedrock-native) still deferred from Part 3, small follow-up whenever; Vertex WIF fully wired but only fully testable once running on real AWS (Part 9)
+📍 Now: Part 7 of 14 — RAG platform — COMPLETE. Waiting for "next" to start Part 8.
+✅ Done: Part 1 (edge front door); Part 2 (provider adapters); Part 3 (structured/streaming/tools); Part 4 (routing/fallback); Part 5 (security); Part 6 (evals/canary); Part 7 (RAG: pgvector, hybrid search, citations)
+⏭ Next: Part 8 — Containers, local Kubernetes, Terraform plan (Dockerfiles, kind cluster, Helm manifests, Terraform for AWS/GCP)
+💰 Spend so far: ~$0.03 (small provider calls across all parts, one eval scorecard run, one retrieval eval run with ~48 Vertex calls) · ☁️ Running now: local FastAPI gateway (port 8000), local Postgres (now pgvector image) + Redis via Docker Compose; tunnel not currently running
+🎓 Understanding checks: passed 6 / done 6 (skipped: none) — each part needed at least one re-ask/re-explanation, all resolved
+⚠️ Open issues: quick tunnel URL is ephemeral (changes on restart, needs redeploy when next needed); prompt caching (Bedrock-native) still deferred from Part 3, small follow-up whenever; Vertex WIF fully wired but only fully testable once running on real AWS (Part 9)
 
 ---
 
@@ -142,3 +142,24 @@
   This directly answers the brief's CFO question: workers_ai matches Bedrock's quality at zero cost — real, evidence-based grounds to prefer the free provider as default.
 - Break-it test (also the brief's exact required check — "a deliberately bad prompt change fails the eval"): set the canary candidate to `mock` (can't answer real questions) at 20% weight → `canary_check.py` scored it 0.0%, automatically rolled back `candidate_weight` to `0.0` with the reason written into `routing.yaml`. Confirmed via 10 live `/v1/chat/smart` calls that traffic never reached the rolled-back candidate afterward — the routing code genuinely respects the auto-rollback, not just the eval script reporting success.
 - Job-skill mapping: this part is close to a direct match for *"Build evaluation pipelines to measure accuracy, task success, retrieval quality, hallucinations/failures, latency, cost, reliability, and safety"* — one of the most senior/high-value bullets on the list. The canary+rollback mechanism is also a real instance of *"ensure... reliability"* from the production bullet, arriving as an automated safety net rather than a manual process.
+
+### Part 7 — RAG platform
+- Status: DONE
+- Tools used: pgvector (Postgres extension), Vertex text-embedding-005, Postgres full-text search
+- Spend: ~$0.01 (embedding calls for ingestion x2 chunk-size runs, ~48 Vertex chat calls during the retrieval eval's reranking pass, all fractions of a cent each)
+- What was built:
+  - Switched Postgres to the `pgvector/pgvector:pg16` image (same Docker volume; confirmed all Part 2-5 data — 277 usage rows, both seeded apps — survived the switch intact) and enabled the `vector` extension
+  - `docs/policies/` (refund, data privacy, account security) + `docs/runbooks/` (password reset, billing dispute, escalation, account recovery) — 7 synthetic docs with deliberate topical overlap, written to meaningfully test retrieval rather than trivially
+  - `gateway/app/db.py` — new `doc_chunks` table (content, 768-dim Vertex embedding, plus a GIN full-text index for hybrid search)
+  - `gateway/scripts/ingest_docs.py` — chunks docs on paragraph boundaries (not fixed character cuts), embeds each chunk via Vertex, stores in `doc_chunks`
+  - `gateway/app/retrieval.py` — `vector_search` (pure semantic), `keyword_search` (Postgres full-text), `hybrid_search` (reciprocal-rank fusion of both), `rerank` (LLM re-scores each candidate's relevance 0-10)
+  - `/v1/rag/ask` — takes a question + strategy (`vector`/`keyword`/`hybrid`/`hybrid_rerank`), retrieves, answers using ONLY the retrieved context, returns source citations
+  - `evals/retrieval_golden.jsonl` + `evals/retrieval_eval.py` — 12-question retrieval-specific eval measuring hit@k across all four strategies
+- Issues hit and resolved:
+  - `vertex.py`'s `_access_token()` was creating fresh credentials and forcing a full OAuth token refresh on every single call — fine at normal traffic, but under the retrieval eval's load (dozens of calls in quick succession across 12 questions × reranking) this caused Google's OAuth endpoint to time out entirely, crashing the eval mid-run. Fixed by caching credentials at module level and only refreshing when actually expired (`credentials.valid` check) — a real lesson in why "works for one request" isn't the same as "works under load"
+- Verification result (matches brief's "done when" exactly):
+  - `/v1/rag/ask` correctly answered "how long do I have to request a refund?" with "30 days," citing `refund_policy.md`
+  - Retrieval eval (hit@3, 12 questions): **vector 100%, keyword 8%, hybrid 100%, hybrid+rerank 100%** — a stark, real demonstration of why semantic search matters: customer questions rarely share exact wording with policy docs, so pure keyword search nearly always missed, while vector/hybrid consistently found the right source
+  - Chunk-size experiment: re-ingested at 200 chars (25 chunks) vs. 500 chars (18 chunks) — no difference in retrieval quality on this dataset (still 100% for vector), an honest finding that chunk size matters more for longer/denser real-world docs than this small synthetic set
+- Break-it test: asked a question with no answer anywhere in the docs ("international shipping fees") — the system correctly replied "the provided context does not contain information about..." instead of inventing a fake policy, even though retrieval still returned its best (irrelevant) guesses as sources.
+- Job-skill mapping: this is a direct, near-verbatim match for *"Design and build RAG systems, knowledge assistants, document-processing applications, chatbots, copilots, and enterprise search systems"* — the exact phrase from the job list. The hit@k retrieval eval is also a concrete instance of *"build evaluation pipelines to measure... retrieval quality"* from Part 6's bullet, now applied to a genuinely different kind of correctness question (did we find the right document, not just did we answer well).
