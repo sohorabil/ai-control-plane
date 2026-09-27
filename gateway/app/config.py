@@ -13,7 +13,16 @@ BEDROCK_MODEL_ID = os.environ.get(
     "BEDROCK_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 )
 
-# Vertex AI (Gemini) — uses Application Default Credentials locally
+# Vertex AI (Gemini) — auth method depends on environment, both use the same
+# code path (google.auth.default() picks whichever is active):
+#   - Local dev: Application Default Credentials, no env var needed
+#     (`gcloud auth application-default login`)
+#   - On AWS (from Part 9 onward): set GOOGLE_APPLICATION_CREDENTIALS to
+#     gateway/wif-credential-config.json — this makes Google's client library
+#     fetch AWS role credentials from the EC2/EKS metadata endpoint instead
+#     of reading any Google credential file. Only works when actually
+#     running on AWS with the eacp-gateway-role IAM role attached; contains
+#     no secrets itself (just the WIF trust-chain addresses), safe to commit.
 GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "")
 GCP_LOCATION = os.environ.get("GCP_LOCATION", "us-central1")
 VERTEX_MODEL_ID = os.environ.get("VERTEX_MODEL_ID", "gemini-2.5-flash")
