@@ -1,0 +1,12 @@
+{"id": "r1", "question": "How long do I have to request a refund?", "expected_source": "docs/policies/refund_policy.md"}
+{"id": "r2", "question": "Can I get my money back for a digital product I already activated?", "expected_source": "docs/policies/refund_policy.md"}
+{"id": "r3", "question": "How do I export all my personal data?", "expected_source": "docs/policies/data_privacy_policy.md"}
+{"id": "r4", "question": "What happens to my data if I delete my account?", "expected_source": "docs/policies/data_privacy_policy.md"}
+{"id": "r5", "question": "How many failed login attempts before my account locks?", "expected_source": "docs/policies/account_security_policy.md"}
+{"id": "r6", "question": "Is it safe to give my password to a support agent over chat?", "expected_source": "docs/policies/account_security_policy.md"}
+{"id": "r7", "question": "What should I tell a customer who can't log in?", "expected_source": "docs/runbooks/password_reset_runbook.md"}
+{"id": "r8", "question": "A customer says they were charged twice, what do I do?", "expected_source": "docs/runbooks/billing_dispute_runbook.md"}
+{"id": "r9", "question": "When should I escalate a ticket to a manager?", "expected_source": "docs/runbooks/escalation_runbook.md"}
+{"id": "r10", "question": "A customer thinks someone else logged into their account, what are the steps?", "expected_source": "docs/runbooks/account_recovery_runbook.md"}
+{"id": "r11", "question": "Do duplicate charges need manager approval before refunding?", "expected_source": "docs/runbooks/billing_dispute_runbook.md"}
+{"id": "r12", "question": "How is customer data encrypted?", "expected_source": "docs/policies/data_privacy_policy.md"}

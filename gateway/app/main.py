@@ -13,6 +13,7 @@ from app.pricing import cost_usd
 from app.prompts import load_prompt
 from app.providers import bedrock, mock, openai, vertex, workers_ai
 from app.rate_limit import check_rate_limit
+from app.retrieval import hybrid_search, keyword_search, rerank, vector_search
 from app.routing import AllProvidersFailedError, call_with_fallback, get_cached, set_cached
 from app.structured import chat_structured, extract_structured_from_document
 
@@ -429,6 +430,51 @@ async def demo_streaming():
     </body>
     </html>
     """
+
+
+class RagAskRequest(BaseModel):
+    question: str
+    strategy: str = "hybrid"  # "vector", "keyword", "hybrid", or "hybrid_rerank"
+    top_k: int = 3
+
+
+RAG_STRATEGIES = {
+    "vector": vector_search,
+    "keyword": keyword_search,
+    "hybrid": hybrid_search,
+}
+
+
+@app.post("/v1/rag/ask")
+async def rag_ask(req: RagAskRequest):
+    if req.strategy == "hybrid_rerank":
+        candidates = await hybrid_search(req.question, top_k=req.top_k * 2)
+        chunks = await rerank(req.question, candidates, top_k=req.top_k)
+    elif req.strategy in RAG_STRATEGIES:
+        chunks = await RAG_STRATEGIES[req.strategy](req.question, top_k=req.top_k)
+    else:
+        raise HTTPException(status_code=400, detail=f"unknown strategy: {req.strategy}")
+
+    if not chunks:
+        return {"answer": "I couldn't find anything in our docs about that.", "sources": []}
+
+    context = "\n\n---\n\n".join(
+        f"[Source: {c['source_path']}]\n{c['content']}" for c in chunks
+    )
+    prompt = (
+        f"Answer the question using ONLY the context below. If the context "
+        f"doesn't contain the answer, say so — don't guess. Cite which "
+        f"source(s) you used.\n\nContext:\n{context}\n\nQuestion: {req.question}"
+    )
+
+    result = await vertex.chat(prompt)
+
+    return {
+        "answer": result.answer,
+        "sources": [{"path": c["source_path"], "chunk_index": c["chunk_index"]} for c in chunks],
+        "strategy": req.strategy,
+        "cost_usd": cost_usd("vertex", result.input_tokens, result.output_tokens),
+    }
 
 
 @app.get("/playground", response_class=HTMLResponse)

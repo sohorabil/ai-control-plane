@@ -1,10 +1,13 @@
 import datetime
 import uuid
 
-from sqlalchemy import create_engine, Column, String, Integer, Float, DateTime, JSON, Boolean
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import create_engine, text, Column, String, Integer, Float, DateTime, JSON, Boolean, Text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.config import DATABASE_URL
+
+EMBEDDING_DIM = 768  # Vertex text-embedding-005 output size
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine)
@@ -48,5 +51,28 @@ class AuditLog(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 
+class DocChunk(Base):
+    __tablename__ = "doc_chunks"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    source_path = Column(String, nullable=False)   # e.g. docs/policies/refund_policy.md
+    chunk_index = Column(Integer, nullable=False)
+    content = Column(Text, nullable=False)
+    embedding = Column(Vector(EMBEDDING_DIM), nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
 def init_db() -> None:
+    with engine.connect() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        conn.commit()
     Base.metadata.create_all(engine)
+    with engine.connect() as conn:
+        # Full-text search index for the hybrid search comparison later.
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS doc_chunks_fts_idx ON doc_chunks "
+                "USING GIN (to_tsvector('english', content))"
+            )
+        )
+        conn.commit()
