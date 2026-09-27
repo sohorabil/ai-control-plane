@@ -1,11 +1,11 @@
 # PROGRESS
 
-📍 Now: Part 5 of 14 — Security + guardrails — COMPLETE. Waiting for "next" to start Part 6.
-✅ Done: Part 1 (edge front door); Part 2 (provider adapters, usage logging); Part 3 (structured output, streaming, tools, extraction); Part 4 (routing, fallback, circuit breaker, cache); Part 5 (per-app keys/roles, PII redaction, injection detection, audit log, rate limiting, Vertex WIF trust chain)
-⏭ Next: Part 6 — Evals + model migration (golden dataset, eval runner, LLM-as-judge, scorecard, canary routing, automatic rollback)
-💰 Spend so far: <$0.01 (small Vertex/OpenAI/Bedrock verification calls across all parts) · ☁️ Running now: local FastAPI gateway (port 8000), cloudflared quick tunnel, local Postgres + Redis via Docker Compose
-🎓 Understanding checks: passed 4 / done 4 so far (skipped: none) — each part needed at least one re-ask/re-explanation, all resolved
-⚠️ Open issues: quick tunnel URL is ephemeral (changes on restart); prompt caching (Bedrock-native) still deferred from Part 3, now unblocked, small follow-up whenever; Vertex WIF fully wired but only fully testable once running on real AWS (Part 9)
+📍 Now: Part 6 of 14 — Evals + model migration — COMPLETE. Waiting for "next" to start Part 7.
+✅ Done: Part 1 (edge front door); Part 2 (provider adapters); Part 3 (structured output, streaming, tools, extraction); Part 4 (routing, fallback, breaker, cache); Part 5 (security + guardrails); Part 6 (eval runner, scorecard, canary rollout + auto-rollback)
+⏭ Next: Part 7 — RAG platform (docs/runbooks, ingestion + embeddings, pgvector, /v1/rag/ask with citations, hybrid search + reranker)
+💰 Spend so far: ~$0.02 (small provider calls across all parts, plus one full 4-provider scorecard run in Part 6) · ☁️ Running now: local FastAPI gateway (port 8000), cloudflared quick tunnel, local Postgres + Redis via Docker Compose
+🎓 Understanding checks: passed 5 / done 5 (skipped: none) — each part needed at least one re-ask/re-explanation, all resolved
+⚠️ Open issues: quick tunnel URL is ephemeral (changes on restart); prompt caching (Bedrock-native) still deferred from Part 3, small follow-up whenever; Vertex WIF fully wired but only fully testable once running on real AWS (Part 9)
 
 ---
 
@@ -118,3 +118,27 @@
   - Real prompt-injection phrase ("ignore all previous instructions...") still correctly blocked after the S7 fix, confirming the fix didn't weaken genuine injection detection
 - Break-it test: a request with a valid `EDGE_SECRET` but no `x-app-key` at all (simulating a compromised shared secret without a specific app's key) → clean `401`, no bypass possible.
 - Job-skill mapping: this part is squarely *"take successful prototypes into production and ensure security... reliability"* and *"integrate LLM applications with... cloud services"* (the AWS↔GCP WIF trust chain). The PII/injection guardrails are also foundational to *"build evaluation pipelines to measure... safety"* — Part 6 can't meaningfully score "is this safe" without Part 5's controls already in place.
+
+### Part 6 — Evals + model migration
+- Status: DONE
+- Tools used: custom eval runner (Python), LLM-as-judge (Bedrock/Claude Haiku), routing.yaml canary config
+- Spend: ~$0.02 (one full scorecard run across workers_ai/vertex/bedrock/openai, ~33 questions each, plus two canary_check.py runs)
+- What was built:
+  - `evals/golden.jsonl` — 33 support-style test cases: 15 exact-match (deterministic factual questions), 12 LLM-judged (subjective free-text, e.g. empathetic support replies), 3 structured-output (ticket-extraction JSON, reusing Part 3's schema idea)
+  - `evals/runner.py` — scores one provider against the golden set; exact/structured cases scored deterministically in code, judged cases scored by a *different* model (avoids a model grading its own mistakes favorably)
+  - `evals/scorecard.py` — runs the eval across multiple providers and prints a side-by-side comparison table
+  - `gateway/routing.yaml` — added a `canary` section (task, primary, candidate, candidate_weight) and real `quality_floor: 0.80` values (previously placeholders); `gateway/app/routing.py` now picks the canary candidate for a random slice of `chat`-task traffic when weight > 0
+  - `evals/canary_check.py` — runs the eval against the current canary candidate and automatically rewrites `routing.yaml` to zero out `candidate_weight` if the score falls below `quality_floor`, leaving the reason in the file
+- Issues hit and resolved:
+  - `normalize()` crashed with `AttributeError: 'int' object has no attribute 'strip'` on a real provider's answer (not the golden data) — fixed by coercing to `str()` before normalizing
+  - Eval runner crashed with a raw `KeyError`/stack trace when given an unknown provider name (caught by this part's own break-it test) — fixed with argparse `choices=` validation
+- Verification result / real scorecard (2026-09-27, full numbers in `evals/scorecard_2026-09-27.md`):
+  | Provider | Score | Cost | Avg Latency |
+  |---|---|---|---|
+  | workers_ai | 88% | $0 | 571ms |
+  | vertex | 91% | $0.0005 | 3525ms |
+  | bedrock | 88% | $0.0088 | 1126ms |
+  | openai | 85% | $0.001 | 1036ms |
+  This directly answers the brief's CFO question: workers_ai matches Bedrock's quality at zero cost — real, evidence-based grounds to prefer the free provider as default.
+- Break-it test (also the brief's exact required check — "a deliberately bad prompt change fails the eval"): set the canary candidate to `mock` (can't answer real questions) at 20% weight → `canary_check.py` scored it 0.0%, automatically rolled back `candidate_weight` to `0.0` with the reason written into `routing.yaml`. Confirmed via 10 live `/v1/chat/smart` calls that traffic never reached the rolled-back candidate afterward — the routing code genuinely respects the auto-rollback, not just the eval script reporting success.
+- Job-skill mapping: this part is close to a direct match for *"Build evaluation pipelines to measure accuracy, task success, retrieval quality, hallucinations/failures, latency, cost, reliability, and safety"* — one of the most senior/high-value bullets on the list. The canary+rollback mechanism is also a real instance of *"ensure... reliability"* from the production bullet, arriving as an automated safety net rather than a manual process.
