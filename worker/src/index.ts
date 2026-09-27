@@ -1,15 +1,20 @@
 export interface Env {
 	EDGE_SECRET: string;
 	GATEWAY_URL: string; // the cloudflared tunnel URL pointing at the FastAPI gateway
-	CLIENT_KEYS: string; // comma-separated demo client keys, set via wrangler secret
+	CLIENT_KEYS: string; // comma-separated known app keys, set via wrangler secret
+	// (kept as CLIENT_KEYS for the existing secret name; each key belongs to one
+	// app and is forwarded to the gateway as x-app-key for role/provider checks)
 }
 
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
-		const clientKey = request.headers.get('x-client-key');
+		// x-app-key identifies which app is calling — the Worker does a fast,
+		// coarse check against the known-keys list; the gateway does the real
+		// per-app lookup (role, allowed providers) using this same header.
+		const appKey = request.headers.get('x-app-key');
 		const validKeys = env.CLIENT_KEYS.split(',').map((k) => k.trim());
 
-		if (!clientKey || !validKeys.includes(clientKey)) {
+		if (!appKey || !validKeys.includes(appKey)) {
 			return new Response(JSON.stringify({ error: 'unauthorized' }), {
 				status: 401,
 				headers: { 'content-type': 'application/json' },
@@ -21,6 +26,8 @@ export default {
 
 		const upstreamRequest = new Request(upstream.toString(), request);
 		upstreamRequest.headers.set('x-edge-secret', env.EDGE_SECRET);
+		// x-app-key is already present on the original request and passes
+		// through untouched to the gateway.
 
 		try {
 			return await fetch(upstreamRequest);

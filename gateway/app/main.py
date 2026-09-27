@@ -5,8 +5,10 @@ from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
+from app.auth import authenticate_app, check_provider_allowed
 from app.config import EDGE_SECRET
-from app.db import SessionLocal, Usage, init_db
+from app.db import App, AuditLog, SessionLocal, Usage, init_db
+from app.guardrails import check_prompt_injection, redact_pii, scan_for_pii
 from app.pricing import cost_usd
 from app.prompts import load_prompt
 from app.providers import bedrock, mock, openai, vertex, workers_ai
@@ -76,6 +78,15 @@ def _log_usage(request_id, app_name, provider, result, status, fallback=None):
         session.close()
 
 
+def _log_audit(app_id: str, event_type: str, detail: dict) -> None:
+    session = SessionLocal()
+    try:
+        session.add(AuditLog(app_id=app_id, event_type=event_type, detail=detail))
+        session.commit()
+    finally:
+        session.close()
+
+
 async def _run_chat(req: ChatRequest) -> dict:
     """Shared logic: call the chosen provider, log usage, shape the response.
 
@@ -112,13 +123,39 @@ async def _run_chat(req: ChatRequest) -> dict:
 
 
 @app.post("/v1/chat")
-async def chat(req: ChatRequest, x_edge_secret: str | None = Header(default=None)):
+async def chat(
+    req: ChatRequest,
+    x_edge_secret: str | None = Header(default=None),
+    x_app_key: str | None = Header(default=None),
+):
     # The Worker injects this header after checking the client's key. If it's
     # missing or wrong, the request didn't really come through the edge front door.
     if not EDGE_SECRET or x_edge_secret != EDGE_SECRET:
         raise HTTPException(status_code=401, detail="missing or invalid edge secret")
 
-    return await _run_chat(req)
+    if not x_app_key:
+        raise HTTPException(status_code=401, detail="missing x-app-key")
+    app_record = authenticate_app(x_app_key)
+
+    check_provider_allowed(app_record, req.provider)
+
+    # Redact PII first so a safety classifier downstream (Llama Guard) never
+    # sees the raw SSN/card number/etc. — it would otherwise flag "contains
+    # PII" as unsafe on its own, which conflicts with our redact-and-continue
+    # policy. Injection detection runs on the already-redacted text.
+    pii_found = scan_for_pii(req.prompt)
+    prompt_to_send = req.prompt
+    if pii_found:
+        prompt_to_send = redact_pii(req.prompt)
+        _log_audit(app_record.app_id, "pii_redacted", {"types": list(pii_found.keys())})
+
+    injection_result = await check_prompt_injection(prompt_to_send)
+    if injection_result["flagged"]:
+        _log_audit(app_record.app_id, "injection_blocked", injection_result)
+        raise HTTPException(status_code=400, detail="request blocked: possible prompt injection")
+
+    req_with_app = req.model_copy(update={"prompt": prompt_to_send, "app_name": app_record.app_id})
+    return await _run_chat(req_with_app)
 
 
 @app.post("/v1/chat/playground")
