@@ -1,11 +1,11 @@
 # PROGRESS
 
-📍 Now: Part 4 of 14 — Smart routing + resilience — COMPLETE. Waiting for "next" to start Part 5.
-✅ Done: Part 1 (edge front door); Part 2 (provider adapters, usage logging); Part 3 (structured output, streaming, tools, extraction); Part 4 (routing.yaml, retry/fallback, circuit breaker, Redis cache)
-⏭ Next: Part 5 — Security + guardrails (per-app API keys, PII detection, prompt-injection checks, audit log, edge rate limit, Vertex WIF)
-💰 Spend so far: <$0.01 (small Vertex/OpenAI/Bedrock verification calls) · ☁️ Running now: local FastAPI gateway (port 8000), cloudflared quick tunnel, local Postgres + Redis via Docker Compose
-🎓 Understanding checks: passed 4 / done 4 (skipped: none) — each part needed at least one re-ask/re-explanation, all resolved
-⚠️ Open issues: quick tunnel URL is ephemeral (changes on restart); prompt caching (Bedrock-native) still not built — was deferred until Bedrock worked, now unblocked, can revisit as a small follow-up whenever
+📍 Now: Part 5 of 14 — Security + guardrails — COMPLETE. Waiting for "next" to start Part 6.
+✅ Done: Part 1 (edge front door); Part 2 (provider adapters, usage logging); Part 3 (structured output, streaming, tools, extraction); Part 4 (routing, fallback, circuit breaker, cache); Part 5 (per-app keys/roles, PII redaction, injection detection, audit log, rate limiting, Vertex WIF trust chain)
+⏭ Next: Part 6 — Evals + model migration (golden dataset, eval runner, LLM-as-judge, scorecard, canary routing, automatic rollback)
+💰 Spend so far: <$0.01 (small Vertex/OpenAI/Bedrock verification calls across all parts) · ☁️ Running now: local FastAPI gateway (port 8000), cloudflared quick tunnel, local Postgres + Redis via Docker Compose
+🎓 Understanding checks: passed 4 / done 4 so far (skipped: none) — each part needed at least one re-ask/re-explanation, all resolved
+⚠️ Open issues: quick tunnel URL is ephemeral (changes on restart); prompt caching (Bedrock-native) still deferred from Part 3, now unblocked, small follow-up whenever; Vertex WIF fully wired but only fully testable once running on real AWS (Part 9)
 
 ---
 
@@ -93,3 +93,28 @@
 - Understanding check: Q1 (what happens when the first provider is down) was missing the "retry the same provider first, then move to the next" detail. Q2 (why circuit breaker matters beyond retries) was answered incorrectly — trainee described a request queue, which isn't what we built; re-explained as "stop wasting time retrying a provider we already know is broken, for every subsequent request, for 30 seconds." Q3 (how caching saves money) was also off — trainee described general session memory; re-explained as "identical question asked twice = second time costs nothing," with an airline pricing-page analogy (many people searching the same route/date get served the same cached price). Trainee confirmed understanding after correction without needing a visual mockup this time.
 - Process note: mid-part, cleaned up leftover uncommitted code from an earlier abandoned interactive-demo attempt (mock's chat() had been slowed to 2s for a demo that was replaced by static Artifact mockups) — restored to normal fast timing, kept the otherwise-unused /demo/streaming route since it was already built and harmless.
 - Standing preference refined this part: build UI/UX mockups as before, but ASK before creating/publishing each one rather than auto-publishing; compile all mockups (shown or not) into one page at the end of the project instead of one-per-part.
+
+### Part 5 — Security + guardrails
+- Status: DONE
+- Tools used: Postgres (new `apps`/`audit_log` tables), Llama Guard via Workers AI, Redis (rate limiting), AWS IAM + GCP Workload Identity Federation
+- Spend: $0 (Llama Guard calls are free-tier Workers AI; IAM roles and WIF pools/providers are free to create, cost only if used to call billed services)
+- What was built:
+  - `gateway/app/db.py` — `App` table (app_id, hashed key, role, allowed_providers) and `AuditLog` table (app_id, event_type, detail, timestamp)
+  - `gateway/app/auth.py` — key hashing, `authenticate_app()`, `check_provider_allowed()` (role-based model allow-list)
+  - `gateway/app/guardrails.py` — regex PII detection/redaction (SSN, credit card, email, phone); prompt-injection detection combining a phrase heuristic with Llama Guard (`@cf/meta/llama-guard-3-8b` via Workers AI/AI Gateway)
+  - `gateway/app/rate_limit.py` — per-app fixed-window rate limiting (30 req/60s) via Redis `INCR`+`EXPIRE`
+  - `/v1/chat` now requires `x-app-key` (renamed from the old shared `x-client-key`/`CLIENT_KEYS` model), enforces rate limit → provider allow-list → PII redaction → injection check, in that order, before calling any provider; PII redactions and blocked injections are audit-logged
+  - `worker/src/index.ts` — forwards `x-app-key` through to the gateway (previously used for the Worker's own coarse check only)
+  - AWS IAM role `eacp-gateway-role` + GCP Workload Identity Pool/Provider (`eacp-aws-pool`/`eacp-aws-provider`) + GCP service account `eacp-vertex-sa` (Vertex AI User only) — full trust chain so the gateway can eventually authenticate to Vertex using its AWS identity instead of a local Google credential file
+  - `gateway/scripts/seed_apps.py` — seeds two demo apps (`support-app`, `analyst-agent`) with different roles/allowed providers for testing
+- Issues hit and resolved:
+  - Llama Guard flagged any PII-containing prompt as "unsafe" (category S7 — Privacy), which directly conflicted with the chosen redact-and-continue PII policy — a real SSN test prompt got wrongly blocked as "prompt injection" before we noticed the actual cause. Fixed two ways: (1) reordered checks so PII is redacted *before* the injection/Llama Guard check runs, and (2) parsed Llama Guard's safety category from its response and explicitly excluded S7, since our own PII scan already owns that concern
+  - Cloudflare's native Workers Rate Limiting binding (`[[unsafe.bindings]]` / `[[ratelimits]]` in wrangler.toml) never triggered even after 100+ rapid requests against a configured 30/60s limit, across both wrangler 3.114.17 and after upgrading to 4.142.0 (which did fix it showing as a proper "Rate Limit" resource instead of unsafe metadata). Researched Cloudflare's own docs/community reports, confirmed this shouldn't happen even accounting for the binding's documented eventual-consistency behavior, and switched to a Redis-based rate limiter in the gateway instead — reusing the same reliable pattern from Part 4's cache/breaker
+- Verification result (matches brief's exact "done when" criteria):
+  - A prompt containing an SSN is redacted (`[REDACTED_SSN]`) before reaching any provider, and the redaction is audit-logged (confirmed via direct Postgres query)
+  - An app requesting a model outside its role's allow-list gets a clear `403`, naming the app and role
+  - Gemini/Vertex calls succeed with no GCP key file — technically true for AWS-hosted infra via WIF, though this specific claim is only *fully* verifiable once the gateway actually runs on AWS in Part 9; local dev still correctly uses ADC in the meantime, unaffected by the WIF setup
+  - Rate limiting confirmed end-to-end through the real Worker → Tunnel → Gateway → Redis chain: requests 1–30 succeed, 31+ correctly return `429`; a different app's key is unaffected (per-app isolation)
+  - Real prompt-injection phrase ("ignore all previous instructions...") still correctly blocked after the S7 fix, confirming the fix didn't weaken genuine injection detection
+- Break-it test: a request with a valid `EDGE_SECRET` but no `x-app-key` at all (simulating a compromised shared secret without a specific app's key) → clean `401`, no bypass possible.
+- Job-skill mapping: this part is squarely *"take successful prototypes into production and ensure security... reliability"* and *"integrate LLM applications with... cloud services"* (the AWS↔GCP WIF trust chain). The PII/injection guardrails are also foundational to *"build evaluation pipelines to measure... safety"* — Part 6 can't meaningfully score "is this safe" without Part 5's controls already in place.
