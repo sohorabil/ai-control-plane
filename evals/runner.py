@@ -120,8 +120,8 @@ async def run_eval(provider_name: str, judge_provider_name: str) -> dict:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("provider")
-    parser.add_argument("--judge-provider", default="bedrock")
+    parser.add_argument("provider", choices=sorted(PROVIDERS.keys()))
+    parser.add_argument("--judge-provider", choices=sorted(PROVIDERS.keys()), default="bedrock")
     args = parser.parse_args()
 
     summary = asyncio.run(run_eval(args.provider, args.judge_provider))
