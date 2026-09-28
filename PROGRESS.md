@@ -1,11 +1,11 @@
 # PROGRESS
 
-📍 Now: Part 7 of 14 — RAG platform — COMPLETE. Waiting for "next" to start Part 8.
-✅ Done: Part 1 (edge front door); Part 2 (provider adapters); Part 3 (structured/streaming/tools); Part 4 (routing/fallback); Part 5 (security); Part 6 (evals/canary); Part 7 (RAG: pgvector, hybrid search, citations)
-⏭ Next: Part 8 — Containers, local Kubernetes, Terraform plan (Dockerfiles, kind cluster, Helm manifests, Terraform for AWS/GCP)
-💰 Spend so far: ~$0.03 (small provider calls across all parts, one eval scorecard run, one retrieval eval run with ~48 Vertex calls) · ☁️ Running now: local FastAPI gateway (port 8000), local Postgres (now pgvector image) + Redis via Docker Compose; tunnel not currently running
-🎓 Understanding checks: passed 6 / done 6 (skipped: none) — each part needed at least one re-ask/re-explanation, all resolved
-⚠️ Open issues: quick tunnel URL is ephemeral (changes on restart, needs redeploy when next needed); prompt caching (Bedrock-native) still deferred from Part 3, small follow-up whenever; Vertex WIF fully wired but only fully testable once running on real AWS (Part 9)
+📍 Now: Part 8 of 14 — Containers, local Kubernetes, Terraform plan — COMPLETE. Waiting for "next" to start Part 9.
+✅ Done: Parts 1-7 (prototype: gateway, providers, toolkit, routing, security, evals, RAG); Part 8 (Docker, kind + Helm, Terraform plans)
+⏭ Next: Part 9 — EKS key day 1 (first real AWS deployment — this is a billable day, requires explicit go-ahead before creating anything)
+💰 Spend so far: ~$0.03 (small provider calls across all parts) · ☁️ Running now: kind Kubernetes cluster (gateway+postgres+redis pods, all local/free); Docker Compose Postgres+Redis stopped; local dev gateway/tunnel stopped
+🎓 Understanding checks: passed 6 / done 6 so far (skipped: none) — each part needed at least one re-ask/re-explanation, all resolved
+⚠️ Open issues: quick tunnel URL is ephemeral; prompt caching (Bedrock-native) still deferred from Part 3; Vertex WIF fully wired but only fully testable once on real AWS (Part 9, next)
 
 ---
 
@@ -163,3 +163,20 @@
   - Chunk-size experiment: re-ingested at 200 chars (25 chunks) vs. 500 chars (18 chunks) — no difference in retrieval quality on this dataset (still 100% for vector), an honest finding that chunk size matters more for longer/denser real-world docs than this small synthetic set
 - Break-it test: asked a question with no answer anywhere in the docs ("international shipping fees") — the system correctly replied "the provided context does not contain information about..." instead of inventing a fake policy, even though retrieval still returned its best (irrelevant) guesses as sources.
 - Job-skill mapping: this is a direct, near-verbatim match for *"Design and build RAG systems, knowledge assistants, document-processing applications, chatbots, copilots, and enterprise search systems"* — the exact phrase from the job list. The hit@k retrieval eval is also a concrete instance of *"build evaluation pipelines to measure... retrieval quality"* from Part 6's bullet, now applied to a genuinely different kind of correctness question (did we find the right document, not just did we answer well).
+
+### Part 8 — Containers, local Kubernetes, Terraform plan
+- Status: DONE
+- Tools used: Docker, kind, Helm, kubectl, Terraform (aws + google providers)
+- Spend: $0 (Docker/kind/Helm are all local; AWS Terraform is plan-only, not applied; GCP BigQuery datasets applied but within the free tier)
+- What was built:
+  - `gateway/Dockerfile` + `.dockerignore` — packages the FastAPI gateway as a container image; verified standalone against the existing Postgres/Redis (including a real chat call) before moving to Kubernetes
+  - `k8s/kind-config.yaml` — local kind cluster config, maps the gateway's NodePort to `localhost:8000`
+  - `k8s/eacp-chart/` (Helm) — Postgres (StatefulSet + PersistentVolumeClaim, pgvector image), Redis (Deployment), gateway (Deployment + NodePort Service); secrets via a Kubernetes Secret (`secret-example.yaml` committed as the template, real `secret.yaml` gitignored)
+  - `terraform/aws/` — VPC (public subnets, no NAT, per the brief), ECR, EKS cluster + node group, least-privilege IAM roles (including a Pod Identity association reusing Part 5's `eacp-gateway-role`), RDS Postgres with a Secrets-Manager-stored random password — **plan-only**, not applied
+  - `terraform/gcp/` — 2 BigQuery datasets (usage analytics, eval history) — **applied**, within the free tier, per the brief's "apply only the free GCP pieces" instruction
+- Issues hit and resolved:
+  - The gateway pod crash-looped with `connection refused` — a normal startup race (gateway started before Postgres was ready); resolved itself once Postgres became ready and the pod was deleted to force a fresh attempt
+  - A second, real bug: `DATABASE_URL`'s `$(POSTGRES_PASSWORD)` substitution silently failed (literal `$(POSTGRES_PASSWORD)` string reached the app), causing a password-authentication failure. Root cause: Kubernetes only resolves `$(VAR)` references to env vars defined **earlier** in the same container's env list — `POSTGRES_PASSWORD` was listed after `DATABASE_URL`. Fixed by reordering; verified zero restarts after the fix.
+- Verification result: all 3 pods (gateway, postgres, redis) reach `Ready` with zero restarts; both a `mock` and a real `workers_ai` call succeed through the cluster (confirming Kubernetes Secret wiring for `CF_API_TOKEN` etc. is correct); `terraform plan` for AWS validates cleanly (24 resources, 0 errors); GCP BigQuery datasets confirmed created via `bq ls`.
+- Break-it test: wrote a test row to the in-cluster Postgres, then `kubectl delete pod postgres-0` to simulate a crash. Kubernetes automatically recreated the pod within ~8 seconds with zero human intervention, and the test row **survived** — proof the data lives in the PersistentVolumeClaim, not the disposable pod. Gateway `/health` stayed `ok` throughout.
+- Job-skill mapping: this part is the concrete start of *"take successful prototypes into production and ensure... scalability, reliability, maintainability"* — containerization and Infrastructure-as-Code are foundational production skills, and the self-healing break-it test is direct, hands-on proof of the "reliability" half of that bullet, not just a claim.
