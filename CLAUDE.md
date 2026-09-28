@@ -3,6 +3,12 @@
 This project is built in 14 parts, one at a time, following the protocol in `project_breif.md`
 and the toolbox in `tools.md`. `project.json` mirrors both in machine-readable form.
 
+**Before working on auth, routing, or infra changes**, read `architecture.md` first — it
+documents the real request path, the three separate trust chains (edge/app/cloud), and why
+`k8s/eacp-chart` and `k8s/eks-manifests` are deliberately separate. It exists specifically
+because Part 9's cross-cloud auth debugging would have been faster with this written down
+beforehand instead of re-derived from code under a live AWS billing clock.
+
 ## Hard rules (apply to every part, no exceptions)
 
 - **Secrets never in code or git.** Local secrets go in `.env` (gitignored). Cloudflare Worker
@@ -53,5 +59,5 @@ client app -> Cloudflare Worker (edge: key check, rate limit, WAF)
 
 Runs locally (Docker + kind) most days; on AWS EKS on Day 9 and Day 13 only.
 
-See `tools.md` for the full toolbox (need → tool → secret/identity) and `project_breif.md` for
-all 14 parts in detail.
+See `tools.md` for the full toolbox (need → tool → secret/identity), `project_breif.md` for all
+14 parts in detail, and `architecture.md` for how the pieces actually connect.
