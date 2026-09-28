@@ -4,6 +4,7 @@
 !.env.example
 *.pem
 *.key
+k8s/eacp-chart/secret.yaml
 
 # python
 __pycache__/

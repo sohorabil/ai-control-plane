@@ -1,0 +1,19 @@
+gateway:
+  image: eacp-gateway:local
+  replicas: 1
+  port: 8000
+
+postgres:
+  image: pgvector/pgvector:pg16
+  storage: 1Gi
+
+redis:
+  image: redis:7-alpine
+
+# Non-secret config only — real values (EDGE_SECRET, CF_API_TOKEN, etc.) come
+# from a Kubernetes Secret created separately (k8s/eacp-chart/secret-example.yaml
+# shows the shape; the real one is never committed).
+env:
+  AWS_REGION: us-east-1
+  GCP_PROJECT_ID: pelagic-cycle-479717-h4
+  GCP_LOCATION: us-central1
