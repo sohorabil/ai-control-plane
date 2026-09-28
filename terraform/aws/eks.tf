@@ -12,6 +12,30 @@ resource "aws_eks_cluster" "main" {
   depends_on = [aws_iam_role_policy_attachment.eks_cluster_policy]
 }
 
+# EKS's default node launch template caps the IMDS hop limit at 1, which
+# blocks traffic from inside a pod's network namespace (2 hops away) from
+# reaching the instance metadata service. That breaks Vertex's Workload
+# Identity Federation, which reads AWS role credentials from IMDS to build
+# its cross-cloud token. Caught during Part 9 verification ("Unable to
+# retrieve AWS role name"); fixed by giving the node group its own launch
+# template with hop_limit = 2, the standard fix for EKS + IMDS-from-pod.
+resource "aws_launch_template" "eks_nodes" {
+  name_prefix = "${var.project_name}-nodes-"
+
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 2
+  }
+
+  tag_specifications {
+    resource_type = "instance"
+    tags = {
+      Name = "${var.project_name}-node"
+    }
+  }
+}
+
 resource "aws_eks_node_group" "main" {
   cluster_name    = aws_eks_cluster.main.name
   node_group_name = "${var.project_name}-nodes"
@@ -25,6 +49,12 @@ resource "aws_eks_node_group" "main" {
   }
 
   instance_types = [var.eks_node_instance_type]
+  ami_type       = "AL2023_x86_64_STANDARD"
+
+  launch_template {
+    id      = aws_launch_template.eks_nodes.id
+    version = aws_launch_template.eks_nodes.latest_version
+  }
 
   depends_on = [
     aws_iam_role_policy_attachment.eks_worker_node_policy,

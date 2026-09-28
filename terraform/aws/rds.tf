@@ -5,7 +5,7 @@ resource "aws_db_subnet_group" "main" {
 
 resource "aws_security_group" "rds" {
   name        = "${var.project_name}-rds-sg"
-  description = "Allow Postgres access only from the EKS cluster's security group"
+  description = "Allow Postgres access only from the EKS cluster security group"
   vpc_id      = aws_vpc.main.id
 
   ingress {

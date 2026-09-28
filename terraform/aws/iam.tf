@@ -63,3 +63,28 @@ resource "aws_iam_role_policy_attachment" "gateway_secrets_read" {
   # scoped to just this project's secret ARNs should replace this before
   # any real production use. Flagged here rather than silently accepted.
 }
+
+# Bedrock InvokeModel — scoped to just the one inference profile/model this
+# gateway actually calls, not "bedrock:*". Caught missing during Part 9's
+# EKS verification: this role had never been given Bedrock access before
+# (local dev had used a personal `aws configure` profile with broader
+# permissions instead of this role).
+resource "aws_iam_role_policy" "gateway_bedrock_invoke" {
+  name = "bedrock-invoke-model"
+  role = data.aws_iam_role.eacp_gateway.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream",
+      ]
+      Resource = [
+        "arn:aws:bedrock:*:*:inference-profile/*",
+        "arn:aws:bedrock:*::foundation-model/*",
+      ]
+    }]
+  })
+}

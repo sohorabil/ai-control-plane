@@ -23,6 +23,7 @@ dist/
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+tfplan*
 
 # os / editor
 .DS_Store
