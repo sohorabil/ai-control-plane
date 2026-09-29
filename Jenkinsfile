@@ -19,6 +19,11 @@ pipeline {
         // never actually query either.
         DATABASE_URL = "postgresql+psycopg://fake:fake@localhost/fake"
         REDIS_URL    = "redis://localhost:6379/0"
+        // "localhost" from inside the Jenkins container means the container
+        // itself, not the host running the gateway's kind pod -- confirmed
+        // during Part 10 setup that host.docker.internal is what actually
+        // reaches it from here.
+        GATEWAY_URL  = "http://host.docker.internal:8000"
     }
 
     stages {
@@ -57,9 +62,15 @@ pipeline {
 
         stage('4. AI Breakage Check (eval gate)') {
             steps {
+                // evals/runner.py must run with the repo ROOT as cwd (it does
+                // `sys.path.insert(..., ".../gateway")` internally, and
+                // "python -m evals.runner" needs evals/ to be a sibling of
+                // the cwd, not the other way around) -- caught by this
+                // part's first real Jenkins run: stage 4 failed with
+                // "ModuleNotFoundError: No module named 'evals'" when this
+                // was run from inside gateway/.
                 sh '''
-                    cd gateway && ../gateway/.ci-venv/bin/pip install -q -r requirements-dev.txt
-                    ./.ci-venv/bin/python -m evals.runner mock --judge-provider mock --golden-file ../evals/ci_smoke.jsonl
+                    gateway/.ci-venv/bin/python -m evals.runner mock --judge-provider mock --golden-file evals/ci_smoke.jsonl
                 '''
             }
         }
@@ -102,7 +113,7 @@ pipeline {
         stage('7. Promote staging -> live') {
             steps {
                 sh '''
-                    curl -sS -f http://localhost:30081/health
+                    curl -sS -f http://host.docker.internal:30081/health
                     helm upgrade --install eacp-prod ./k8s/eacp-chart \
                       --namespace eacp-prod --create-namespace \
                       --set gateway.image=eacp-gateway:staging \
