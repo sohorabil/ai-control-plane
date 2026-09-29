@@ -1,0 +1,27 @@
+// Part 10 — rollback job.
+//
+// This is deliberately a SEPARATE pipeline from the main Jenkinsfile, not an
+// extra stage in it — because it runs on a genuinely different trigger
+// (a human decision "revert prod now"), not "code was pushed". See the
+// discussion in PROGRESS.md Part 10 on when a second pipeline is actually
+// warranted vs. when it's just the same pipeline's stages misread as many.
+//
+// Usage: run manually from Jenkins (Build with Parameters) when eacp-prod
+// needs to revert to its previous Helm release.
+
+pipeline {
+    agent any
+
+    stages {
+        stage('Rollback eacp-prod to previous release') {
+            steps {
+                sh '''
+                    helm history eacp-prod -n eacp-prod
+                    helm rollback eacp-prod 0 -n eacp-prod
+                    kubectl rollout status deployment/gateway -n eacp-prod --timeout=90s
+                    curl -sS -f http://localhost:30080/health
+                '''
+            }
+        }
+    }
+}

@@ -25,5 +25,22 @@ services:
       timeout: 5s
       retries: 5
 
+  # Part 10 — CI/CD. Named/ported distinctly from any other Jenkins on this
+  # machine (project-scoped: container name, volume, and port are all
+  # eacp-specific) so it never collides with or touches anything unrelated.
+  jenkins:
+    image: jenkins/jenkins:lts
+    container_name: eacp-jenkins
+    ports:
+      - "8081:8080"   # Jenkins web UI (8080 was already taken on this machine)
+      - "50001:50000" # Jenkins agent port
+    volumes:
+      - eacp-jenkins-data:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      JAVA_OPTS: "-Djenkins.install.runSetupWizard=true"
+
 volumes:
   pgdata:
+  eacp-jenkins-data:
+    external: true

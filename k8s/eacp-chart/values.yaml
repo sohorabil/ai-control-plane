@@ -2,6 +2,7 @@ gateway:
   image: eacp-gateway:local
   replicas: 1
   port: 8000
+  nodePort: 30080  # Part 10: staging/prod deploys override this to avoid a collision
 
 postgres:
   image: pgvector/pgvector:pg16

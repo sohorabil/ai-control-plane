@@ -80,4 +80,4 @@ spec:
     app: gateway
   ports:
     - port: {{ .Values.gateway.port }}
-      nodePort: 30080
+      nodePort: {{ .Values.gateway.nodePort | default 30080 }}

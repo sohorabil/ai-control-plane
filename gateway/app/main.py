@@ -1,13 +1,13 @@
 import json
 import uuid
 
-from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
 from app.auth import authenticate_app, check_provider_allowed
 from app.config import EDGE_SECRET
-from app.db import App, AuditLog, SessionLocal, Usage, init_db
+from app.db import AuditLog, SessionLocal, Usage, init_db
 from app.guardrails import check_prompt_injection, redact_pii, scan_for_pii
 from app.pricing import cost_usd
 from app.prompts import load_prompt
@@ -311,7 +311,7 @@ DOCUMENT_PROVIDERS = {"vertex": vertex}
 
 
 @app.post("/v1/extract/document")
-async def extract_document(file: UploadFile = File(...), provider: str = "vertex"):
+async def extract_document(file: UploadFile = File(...), provider: str = Form("vertex")):
     if provider not in DOCUMENT_PROVIDERS:
         raise HTTPException(
             status_code=400,

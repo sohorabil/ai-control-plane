@@ -27,8 +27,8 @@ PROVIDERS = {
 GOLDEN_PATH = Path(__file__).parent / "golden.jsonl"
 
 
-def load_cases() -> list[dict]:
-    return [json.loads(line) for line in GOLDEN_PATH.read_text().splitlines() if line.strip()]
+def load_cases(golden_path: Path = GOLDEN_PATH) -> list[dict]:
+    return [json.loads(line) for line in golden_path.read_text().splitlines() if line.strip()]
 
 
 def normalize(text) -> str:
@@ -59,10 +59,12 @@ async def score_judged(case: dict, answer: str, judge_module) -> bool:
     return "pass" in result.answer.strip().lower()
 
 
-async def run_eval(provider_name: str, judge_provider_name: str) -> dict:
+async def run_eval(
+    provider_name: str, judge_provider_name: str, golden_path: Path = GOLDEN_PATH
+) -> dict:
     provider = PROVIDERS[provider_name]
     judge = PROVIDERS[judge_provider_name]
-    cases = load_cases()
+    cases = load_cases(golden_path)
 
     results = []
     total_cost = 0.0
@@ -122,9 +124,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("provider", choices=sorted(PROVIDERS.keys()))
     parser.add_argument("--judge-provider", choices=sorted(PROVIDERS.keys()), default="bedrock")
+    parser.add_argument(
+        "--golden-file",
+        type=Path,
+        default=GOLDEN_PATH,
+        help="path to a .jsonl golden set (default: evals/golden.jsonl)",
+    )
     args = parser.parse_args()
 
-    summary = asyncio.run(run_eval(args.provider, args.judge_provider))
+    summary = asyncio.run(run_eval(args.provider, args.judge_provider, args.golden_file))
 
     print(f"\n=== Eval results: {summary['provider']} ===")
     print(f"Score: {summary['passed']}/{summary['total_cases']} ({summary['score']*100:.1f}%)")
