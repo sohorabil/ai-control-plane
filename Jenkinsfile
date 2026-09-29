@@ -101,11 +101,25 @@ pipeline {
 
         stage('6. Deploy to kind (staging)') {
             steps {
+                // Build #4 broke here: eacp-staging is a brand-new namespace,
+                // and Kubernetes Secrets are namespace-scoped -- the
+                // eacp-secrets Secret created back in Part 8 only exists in
+                // "default", so the pod failed with CreateContainerConfigError
+                // ("secret eacp-secrets not found"). Fixed by copying the
+                // existing Secret's data into the target namespace before
+                // deploying, rather than hardcoding any secret value here
+                // (keeps "secrets never in code" intact -- this reads the
+                // real values from the cluster, never writes them to disk).
                 sh '''
+                    kubectl create namespace eacp-staging --dry-run=client -o yaml | kubectl apply -f -
+                    kubectl get secret eacp-secrets -n default -o json \
+                      | jq 'del(.metadata.namespace,.metadata.resourceVersion,.metadata.uid,.metadata.creationTimestamp,.metadata.annotations)' \
+                      | kubectl apply -n eacp-staging -f -
+
                     docker build -t eacp-gateway:staging ./gateway
                     kind load docker-image eacp-gateway:staging --name eacp-local
                     helm upgrade --install eacp-staging ./k8s/eacp-chart \
-                      --namespace eacp-staging --create-namespace \
+                      --namespace eacp-staging \
                       --set gateway.image=eacp-gateway:staging \
                       --set gateway.nodePort=30081
                     kubectl rollout status deployment/gateway -n eacp-staging --timeout=90s
@@ -115,10 +129,26 @@ pipeline {
 
         stage('7. Promote staging -> live') {
             steps {
+                // Same namespace-scoped-Secret fix as stage 6 — eacp-prod
+                // needs its own copy of eacp-secrets too.
+                //
+                // Health check uses in-cluster Service DNS, not a host port —
+                // eacp-staging's NodePort (30081) was never added to kind's
+                // extraPortMappings (only 30080, from Part 8, is mapped to
+                // the host), so it's unreachable from the host/Jenkins
+                // container directly. A temporary pod inside the cluster can
+                // always reach it via cluster DNS regardless of host mappings.
                 sh '''
-                    curl -sS -f http://host.docker.internal:30081/health
+                    kubectl run staging-healthcheck --rm -i --restart=Never --image=curlimages/curl -n eacp-staging \
+                      -- curl -sS -f -m 10 http://gateway.eacp-staging.svc.cluster.local:8000/health
+
+                    kubectl create namespace eacp-prod --dry-run=client -o yaml | kubectl apply -f -
+                    kubectl get secret eacp-secrets -n default -o json \
+                      | jq 'del(.metadata.namespace,.metadata.resourceVersion,.metadata.uid,.metadata.creationTimestamp,.metadata.annotations)' \
+                      | kubectl apply -n eacp-prod -f -
+
                     helm upgrade --install eacp-prod ./k8s/eacp-chart \
-                      --namespace eacp-prod --create-namespace \
+                      --namespace eacp-prod \
                       --set gateway.image=eacp-gateway:staging \
                       --set gateway.nodePort=30080
                     kubectl rollout status deployment/gateway -n eacp-prod --timeout=90s
