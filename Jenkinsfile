@@ -77,22 +77,25 @@ pipeline {
 
         stage('5. AI Code Review Comment') {
             steps {
-                script {
-                    def diffSummary = sh(
-                        script: "git diff HEAD~1 HEAD --stat || echo 'no previous commit to diff'",
-                        returnStdout: true
-                    ).trim()
-                    // Uses our own gateway (mock provider — free, no live
-                    // credentials needed inside Jenkins) to draft a review
-                    // comment. GATEWAY_URL points at the gateway running in
-                    // the local kind cluster (see PROGRESS.md Part 10).
-                    sh """
-                        curl -sS -X POST \${GATEWAY_URL:-http://localhost:8000}/v1/chat/playground \
-                          -H 'Content-Type: application/json' \
-                          -d '{"provider":"mock","prompt":"Review this diff summary for risk: ${diffSummary}"}' \
-                          || echo 'AI review call failed (non-blocking for this part) — see console log'
-                    """
-                }
+                // Uses our own gateway (mock provider — free, no live
+                // credentials needed inside Jenkins) to draft a review
+                // comment. GATEWAY_URL points at the gateway running in the
+                // local kind cluster (see PROGRESS.md Part 10).
+                //
+                // Build #2 broke here: the diff --stat output contains a
+                // real newline, which naive shell string interpolation into
+                // a JSON literal doesn't escape, so curl sent invalid JSON
+                // every time. Fixed by using jq to build the payload
+                // properly instead of hand-rolling JSON in a shell string.
+                sh '''
+                    DIFF_SUMMARY=$(git diff HEAD~1 HEAD --stat || echo 'no previous commit to diff')
+                    PROMPT="Review this diff summary for risk: ${DIFF_SUMMARY}"
+                    PAYLOAD=$(jq -n --arg provider "mock" --arg prompt "$PROMPT" '{provider:$provider,prompt:$prompt}')
+                    curl -sS -X POST "${GATEWAY_URL:-http://localhost:8000}/v1/chat/playground" \
+                      -H 'Content-Type: application/json' \
+                      -d "$PAYLOAD" \
+                      || echo 'AI review call failed (non-blocking for this part) — see console log'
+                '''
             }
         }
 
