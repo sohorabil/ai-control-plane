@@ -110,17 +110,29 @@ pipeline {
                 // deploying, rather than hardcoding any secret value here
                 // (keeps "secrets never in code" intact -- this reads the
                 // real values from the cluster, never writes them to disk).
+                //
+                // Image is tagged with the unique Jenkins build number, not
+                // a static ":staging" tag -- verified by hand that a static
+                // tag is a real bug, not a theoretical one: with
+                // imagePullPolicy: IfNotPresent (k8s/eacp-chart's default),
+                // rebuilding and reloading an image under the SAME tag does
+                // NOT make the node's cached layer update, so a second
+                // `helm upgrade` with an unchanged tag reports success and
+                // even creates a new pod, but that pod silently runs the
+                // OLD code. Confirmed this by deploying v1, rebuilding v2
+                // under the same tag, and finding the "upgraded" pod still
+                // had v1's code. A unique tag per build forces a real pull.
                 sh '''
                     kubectl create namespace eacp-staging --dry-run=client -o yaml | kubectl apply -f -
                     kubectl get secret eacp-secrets -n default -o json \
                       | jq 'del(.metadata.namespace,.metadata.resourceVersion,.metadata.uid,.metadata.creationTimestamp,.metadata.annotations)' \
                       | kubectl apply -n eacp-staging -f -
 
-                    docker build -t eacp-gateway:staging ./gateway
-                    kind load docker-image eacp-gateway:staging --name eacp-local
+                    docker build -t eacp-gateway:build-${BUILD_NUMBER} ./gateway
+                    kind load docker-image eacp-gateway:build-${BUILD_NUMBER} --name eacp-local
                     helm upgrade --install eacp-staging ./k8s/eacp-chart \
                       --namespace eacp-staging \
-                      --set gateway.image=eacp-gateway:staging \
+                      --set gateway.image=eacp-gateway:build-${BUILD_NUMBER} \
                       --set gateway.nodePort=30081
                     kubectl rollout status deployment/gateway -n eacp-staging --timeout=90s
                 '''
@@ -149,7 +161,7 @@ pipeline {
 
                     helm upgrade --install eacp-prod ./k8s/eacp-chart \
                       --namespace eacp-prod \
-                      --set gateway.image=eacp-gateway:staging \
+                      --set gateway.image=eacp-gateway:build-${BUILD_NUMBER} \
                       --set gateway.nodePort=30080
                     kubectl rollout status deployment/gateway -n eacp-prod --timeout=90s
                 '''
@@ -162,7 +174,7 @@ pipeline {
             echo 'Pipeline failed — see the failed stage above. Nothing after that stage ran, and eacp-prod was not touched if the failure was at or before stage 6.'
         }
         always {
-            sh 'docker rmi eacp-gateway:ci-scan eacp-gateway:staging || true'
+            sh 'docker rmi eacp-gateway:ci-scan eacp-gateway:build-${BUILD_NUMBER} || true'
         }
     }
 }
