@@ -130,6 +130,13 @@ if __name__ == "__main__":
         default=GOLDEN_PATH,
         help="path to a .jsonl golden set (default: evals/golden.jsonl)",
     )
+    parser.add_argument(
+        "--quality-floor",
+        type=float,
+        default=None,
+        help="exit 1 if score falls below this (0.0-1.0) — for CI gating; "
+        "omit to just print results without gating (the original behavior)",
+    )
     args = parser.parse_args()
 
     summary = asyncio.run(run_eval(args.provider, args.judge_provider, args.golden_file))
@@ -142,3 +149,10 @@ if __name__ == "__main__":
     for r in summary["results"]:
         if not r["passed"]:
             print(f"  [{r['id']}] {r['error'] or r['answer']}")
+
+    if args.quality_floor is not None and summary["score"] < args.quality_floor:
+        print(
+            f"\nFAILED quality floor: {summary['score']*100:.1f}% < "
+            f"{args.quality_floor*100:.1f}% required"
+        )
+        sys.exit(1)

@@ -69,8 +69,15 @@ pipeline {
                 // part's first real Jenkins run: stage 4 failed with
                 // "ModuleNotFoundError: No module named 'evals'" when this
                 // was run from inside gateway/.
+                //
+                // --quality-floor is required here: without it, runner.py
+                // always exits 0 regardless of score (its original design —
+                // it was only ever run manually and read by a human before
+                // this part). Verified this the hard way: a deliberately
+                // 0%-scoring golden file still exited 0 until this flag was
+                // added, which would have made this whole stage a no-op gate.
                 sh '''
-                    gateway/.ci-venv/bin/python -m evals.runner mock --judge-provider mock --golden-file evals/ci_smoke.jsonl
+                    gateway/.ci-venv/bin/python -m evals.runner mock --judge-provider mock --golden-file evals/ci_smoke.jsonl --quality-floor 0.80
                 '''
             }
         }
