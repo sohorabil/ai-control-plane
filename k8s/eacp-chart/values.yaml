@@ -3,6 +3,13 @@ gateway:
   replicas: 1
   port: 8000
   nodePort: 30080  # Part 10: staging/prod deploys override this to avoid a collision
+  # Off by default. Only for local kind testing, so Bedrock/Vertex work here
+  # too (they otherwise only work from a real EKS pod via Pod Identity/WIF,
+  # or your local terminal directly). Never turn this on for a real EKS
+  # deploy — Pod Identity is the only correct mechanism there, and this
+  # exists purely so this project's own gateway can be manually tested
+  # end-to-end against real providers without needing real cloud infra up.
+  localCloudCreds: false
 
 postgres:
   image: pgvector/pgvector:pg16

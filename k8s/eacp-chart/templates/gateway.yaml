@@ -57,6 +57,24 @@ spec:
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
+            {{- if .Values.gateway.localCloudCreds }}
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: eacp-local-cloud-creds
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: eacp-local-cloud-creds
+                  key: AWS_SECRET_ACCESS_KEY
+            {{- end }}
+          {{- if .Values.gateway.localCloudCreds }}
+          volumeMounts:
+            - name: gcloud-adc
+              mountPath: /root/.config/gcloud
+              readOnly: true
+          {{- end }}
           readinessProbe:
             httpGet:
               path: /health
@@ -69,6 +87,15 @@ spec:
               port: {{ .Values.gateway.port }}
             initialDelaySeconds: 10
             periodSeconds: 10
+      {{- if .Values.gateway.localCloudCreds }}
+      volumes:
+        - name: gcloud-adc
+          secret:
+            secretName: eacp-local-cloud-creds
+            items:
+              - key: gcloud-adc.json
+                path: application_default_credentials.json
+      {{- end }}
 ---
 apiVersion: v1
 kind: Service
