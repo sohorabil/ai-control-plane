@@ -51,6 +51,24 @@ class AuditLog(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 
+class Feedback(Base):
+    """Part 12's feedback loop: thumbs up/down on a playground or agent
+    answer. Never auto-promoted into evals/golden.jsonl — a human reviews
+    thumbs-down cases first (see scripts/review_feedback.py), since letting
+    one bad vote silently poison the golden set would make it untrustworthy.
+    """
+    __tablename__ = "feedback"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    question = Column(Text, nullable=False)
+    answer = Column(Text, nullable=False)
+    source = Column(String, nullable=False)   # "playground" | "agent" | "rag"
+    rating = Column(String, nullable=False)   # "up" | "down"
+    reviewed = Column(Boolean, default=False)
+    added_to_golden = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
 class DocChunk(Base):
     __tablename__ = "doc_chunks"
 

@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from app.agents import analyst_agent
 from app.auth import authenticate_app, check_provider_allowed
 from app.config import EDGE_SECRET
-from app.db import AuditLog, SessionLocal, Usage, init_db
+from app.db import AuditLog, Feedback, SessionLocal, Usage, init_db
 from app.guardrails import check_prompt_injection, redact_pii, scan_for_pii
 from app.metrics import record_cache_lookup, record_fallback, record_request
 from app.pricing import cost_usd
@@ -571,6 +571,36 @@ async def router_ask(req: RouterAskRequest):
     else:
         rag_result = await rag_ask(RagAskRequest(question=req.question))
         return {"routed_to": "documents", **rag_result}
+
+
+class FeedbackRequest(BaseModel):
+    question: str
+    answer: str
+    source: str  # "playground" | "agent" | "rag"
+    rating: str  # "up" | "down"
+
+
+@app.post("/v1/feedback")
+async def submit_feedback(req: FeedbackRequest):
+    """Part 12's feedback loop, step 1: record a thumbs up/down. Never
+    auto-promotes anything into evals/golden.jsonl — see
+    scripts/review_feedback.py for the human-review step that does.
+    """
+    if req.rating not in ("up", "down"):
+        raise HTTPException(status_code=400, detail="rating must be 'up' or 'down'")
+    if req.source not in ("playground", "agent", "rag"):
+        raise HTTPException(status_code=400, detail="source must be 'playground', 'agent', or 'rag'")
+
+    session = SessionLocal()
+    try:
+        feedback = Feedback(
+            question=req.question, answer=req.answer, source=req.source, rating=req.rating,
+        )
+        session.add(feedback)
+        session.commit()
+        return {"id": feedback.id, "status": "recorded"}
+    finally:
+        session.close()
 
 
 @app.get("/playground", response_class=HTMLResponse)
