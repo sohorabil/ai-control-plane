@@ -1,0 +1,31 @@
+# Part 13 — read-only RBAC for the Incident Agent's kubectl-equivalent tool.
+# Scoped to exactly what an investigation needs (pods, events, logs,
+# deployments) in THIS namespace only — no write verbs anywhere, no
+# cluster-wide access. The agent's whole safety model depends on this being
+# genuinely read-only at the Kubernetes API level, not just "the code
+# doesn't call a write endpoint" — even if the agent's own code had a bug,
+# this Role would still refuse any write attempt.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: incident-agent-readonly
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: incident-agent-readonly-binding
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: incident-agent-readonly
+  apiGroup: rbac.authorization.k8s.io

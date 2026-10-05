@@ -44,3 +44,7 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 OTEL_EXPORTER_OTLP_ENDPOINT = os.environ.get(
     "OTEL_EXPORTER_OTLP_ENDPOINT", "http://host.docker.internal:4318"
 )
+
+# Part 13 — Incident Agent reads Prometheus the same way (host.docker.internal,
+# same cross-network reasoning as Jaeger above).
+PROMETHEUS_URL = os.environ.get("PROMETHEUS_URL", "http://host.docker.internal:9090")
