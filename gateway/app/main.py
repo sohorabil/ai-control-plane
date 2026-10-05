@@ -2,13 +2,15 @@ import json
 import uuid
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel
 
 from app.auth import authenticate_app, check_provider_allowed
 from app.config import EDGE_SECRET
 from app.db import AuditLog, SessionLocal, Usage, init_db
 from app.guardrails import check_prompt_injection, redact_pii, scan_for_pii
+from app.metrics import record_cache_lookup, record_fallback, record_request
 from app.pricing import cost_usd
 from app.prompts import load_prompt
 from app.providers import bedrock, mock, openai, vertex, workers_ai
@@ -58,7 +60,17 @@ async def health():
     return {"status": "ok"}
 
 
-def _log_usage(request_id, app_name, provider, result, status, fallback=None):
+@app.get("/metrics")
+async def metrics():
+    # Prometheus scrapes this endpoint on a schedule (see
+    # prometheus/prometheus.yml) — it's a pull model, not us pushing data out.
+    return PlainTextResponse(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+def _log_usage(request_id, app_name, provider, result, status, fallback=None, task=None):
+    model = MODEL_NAMES.get(provider, provider)
+    cost = cost_usd(provider, result.input_tokens, result.output_tokens)
+
     session = SessionLocal()
     try:
         session.add(
@@ -66,11 +78,11 @@ def _log_usage(request_id, app_name, provider, result, status, fallback=None):
                 request_id=request_id,
                 app=app_name,
                 provider=provider,
-                model=MODEL_NAMES.get(provider, provider),
+                model=model,
                 input_tokens=result.input_tokens,
                 output_tokens=result.output_tokens,
                 latency_ms=result.latency_ms,
-                cost_usd=cost_usd(provider, result.input_tokens, result.output_tokens),
+                cost_usd=cost,
                 status=status,
                 fallback=fallback,
             )
@@ -78,6 +90,18 @@ def _log_usage(request_id, app_name, provider, result, status, fallback=None):
         session.commit()
     finally:
         session.close()
+
+    # Same data, second destination: Postgres (above) is the row-level
+    # source of truth evals/BigQuery export read from later; Prometheus
+    # (below) is the aggregated, queryable-over-time view Grafana reads from
+    # directly. Recording both here means every existing call site that
+    # already logs usage gets metrics for free, with no duplicated call sites.
+    record_request(
+        app_name, provider, model, status, result.latency_ms,
+        result.input_tokens, result.output_tokens, cost,
+    )
+    if fallback:
+        record_fallback(task=task or "unknown")
 
 
 def _log_audit(app_id: str, event_type: str, detail: dict) -> None:
@@ -185,6 +209,7 @@ async def chat_smart(req: SmartChatRequest, x_edge_secret: str | None = Header(d
 
     first_provider = "workers_ai"  # cache key uses the first candidate for simplicity
     cached = get_cached(first_provider, req.prompt)
+    record_cache_lookup(hit=bool(cached))
     if cached:
         cached["from_cache"] = True
         return cached
@@ -204,6 +229,7 @@ async def chat_smart(req: SmartChatRequest, x_edge_secret: str | None = Header(d
         result,
         status="ok",
         fallback=None if len(attempted) == 1 else json.dumps(attempted),
+        task=req.task,
     )
 
     payload = {

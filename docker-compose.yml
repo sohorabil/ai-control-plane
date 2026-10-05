@@ -45,6 +45,36 @@ services:
       - default
       - kind
 
+  # Part 11 — observability. Needs the `kind` network too, same reason as
+  # Jenkins: the gateway pods it scrapes live inside that separate Docker
+  # network, not reachable via localhost from this container.
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: eacp-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - default
+      - kind
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: eacp-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+
 networks:
   default:
   kind:
@@ -54,3 +84,5 @@ volumes:
   pgdata:
   eacp-jenkins-data:
     external: true
+  prometheus-data:
+  grafana-data:

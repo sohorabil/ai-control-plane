@@ -1,0 +1,23 @@
+# Part 11 — scrapes the gateway's /metrics endpoint every 15s. Prometheus
+# pulls (asks "what are your numbers right now?") rather than the gateway
+# pushing — the standard Prometheus model.
+#
+# Targets use the kind node's internal container IP (172.19.0.2), not
+# localhost: Prometheus runs in its own Docker container, and the gateway
+# pods live inside the separate `kind` Docker network — same cross-network
+# addressing lesson already learned wiring up Jenkins in Part 10.
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "eacp-gateway-prod"
+    static_configs:
+      - targets: ["172.19.0.2:30080"]
+        labels:
+          environment: "prod"
+
+  - job_name: "eacp-gateway-staging"
+    static_configs:
+      - targets: ["172.19.0.2:30081"]
+        labels:
+          environment: "staging"
