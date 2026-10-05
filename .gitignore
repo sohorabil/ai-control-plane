@@ -10,7 +10,11 @@ k8s/eacp-chart/secret.yaml
 __pycache__/
 *.pyc
 .venv/
+.venv-*/
 venv/
+
+# Part 11 — local watermark for the BigQuery export script, machine-specific
+.last_export_watermark
 
 # node / wrangler
 node_modules/

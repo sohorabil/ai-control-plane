@@ -1,3 +1,7 @@
 -r requirements.txt
 pytest==8.3.3
 ruff==0.7.1
+
+# scripts/export_usage_to_bigquery.py only — never runs inside the serving
+# gateway image, so this stays out of requirements.txt
+google-cloud-bigquery==3.26.0
