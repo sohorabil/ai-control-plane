@@ -36,3 +36,11 @@ DATABASE_URL = os.environ.get(
 )
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+
+# Part 11 — OpenTelemetry. host.docker.internal works both from inside a
+# kind pod (reaches the Jaeger container on the host's Docker network) and
+# from a plain local `uvicorn` process (reaches Docker Desktop's gateway IP)
+# — verified both paths work from this project's actual setup.
+OTEL_EXPORTER_OTLP_ENDPOINT = os.environ.get(
+    "OTEL_EXPORTER_OTLP_ENDPOINT", "http://host.docker.internal:4318"
+)

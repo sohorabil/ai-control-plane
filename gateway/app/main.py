@@ -18,8 +18,10 @@ from app.rate_limit import check_rate_limit
 from app.retrieval import hybrid_search, keyword_search, rerank, vector_search
 from app.routing import AllProvidersFailedError, call_with_fallback, get_cached, set_cached
 from app.structured import chat_structured, extract_structured_from_document
+from app.tracing import provider_span, setup_tracing
 
 app = FastAPI(title="AI Control Plane Gateway")
+setup_tracing(app)
 
 PROVIDERS = {
     "mock": mock,
@@ -123,8 +125,10 @@ async def _run_chat(req: ChatRequest) -> dict:
         raise HTTPException(status_code=400, detail=f"unknown provider: {req.provider}")
 
     request_id = str(uuid.uuid4())
+    model = MODEL_NAMES.get(req.provider, req.provider)
     try:
-        result = await PROVIDERS[req.provider].chat(req.prompt)
+        with provider_span(req.provider, model):
+            result = await PROVIDERS[req.provider].chat(req.prompt)
     except Exception as exc:
         _log_usage(
             request_id,

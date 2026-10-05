@@ -21,3 +21,7 @@ opentelemetry-api==1.27.0
 opentelemetry-sdk==1.27.0
 opentelemetry-exporter-otlp-proto-http==1.27.0
 opentelemetry-instrumentation-fastapi==0.48b0
+# opentelemetry-instrumentation-fastapi imports pkg_resources at runtime
+# (not just build-time), which python:3.12-slim doesn't include by default —
+# caught by actually running the built image, not just a local import check.
+setuptools==75.6.0

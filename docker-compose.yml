@@ -75,6 +75,23 @@ services:
     depends_on:
       - prometheus
 
+  # Distributed tracing (OpenTelemetry backend). Unlike Prometheus (which
+  # pulls from the gateway), the gateway PUSHES spans here over OTLP — so
+  # this container needs the `kind` network too, same as the others, but
+  # for the opposite traffic direction: gateway pods -> this container,
+  # not this container -> gateway pods.
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: eacp-jaeger
+    ports:
+      - "16686:16686" # Jaeger UI
+      - "4318:4318"   # OTLP HTTP receiver
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    networks:
+      - default
+      - kind
+
 networks:
   default:
   kind:
