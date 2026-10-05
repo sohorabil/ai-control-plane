@@ -1,14 +1,15 @@
 import json
 import uuid
 
+import httpx
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel
 
-from app.agents import analyst_agent
+from app.agents import analyst_agent, incident_agent
 from app.auth import authenticate_app, check_provider_allowed
-from app.config import EDGE_SECRET
+from app.config import EDGE_SECRET, ROLLBACK_EXECUTOR_URL
 from app.db import AuditLog, Feedback, SessionLocal, Usage, init_db
 from app.guardrails import check_prompt_injection, redact_pii, scan_for_pii
 from app.metrics import record_cache_lookup, record_fallback, record_request
@@ -601,6 +602,54 @@ async def submit_feedback(req: FeedbackRequest):
         return {"id": feedback.id, "status": "recorded"}
     finally:
         session.close()
+
+
+@app.post("/v1/incident/investigate")
+async def incident_investigate():
+    """Part 13's Incident Agent: gathers evidence (Prometheus, Kubernetes,
+    deploy history, runbook RAG) and proposes a hypothesis + action. Never
+    executes anything — see /v1/incident/approve-rollback for the only
+    action this can lead to, which requires a separate, explicit human call.
+    """
+    report = await incident_agent.investigate(vertex)
+    return {
+        "status": report.status,
+        "hypothesis": report.hypothesis,
+        "proposed_action": report.proposed_action,
+        "proposed_rollback_revision": report.proposed_rollback_revision,
+        "evidence": {
+            "error_rate": report.evidence.error_rate if report.evidence else None,
+            "p95_latency": report.evidence.p95_latency if report.evidence else None,
+            "recent_deploys": report.evidence.recent_deploys if report.evidence else None,
+            "recent_events": report.evidence.recent_events if report.evidence else None,
+        } if report.evidence else None,
+    }
+
+
+class ApproveRollbackRequest(BaseModel):
+    target_image: str
+    approved_by: str
+
+
+@app.post("/v1/incident/approve-rollback")
+async def incident_approve_rollback(req: ApproveRollbackRequest):
+    """The ONLY path by which a rollback can actually happen. Calls the
+    separate Rollback Executor service (its own, narrowly-scoped service
+    account — see k8s/eacp-chart/templates/rollback-executor.yaml) — this
+    gateway process itself has no write credentials of any kind.
+    """
+    if not req.approved_by:
+        raise HTTPException(status_code=400, detail="approved_by is required — no anonymous rollbacks")
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{ROLLBACK_EXECUTOR_URL}/rollback",
+            json={"target_image": req.target_image, "approved_by": req.approved_by},
+        )
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"rollback executor call failed: {resp.text}")
+
+    return resp.json()
 
 
 @app.get("/playground", response_class=HTMLResponse)

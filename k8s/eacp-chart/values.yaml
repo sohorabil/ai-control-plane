@@ -11,6 +11,13 @@ gateway:
   # end-to-end against real providers without needing real cloud infra up.
   localCloudCreds: false
 
+# Part 13 — a deliberately separate service with its own, narrower
+# ServiceAccount (see templates/rollback-executor.yaml) so the one
+# write-capable action (rollback) is never held by the same identity as the
+# Incident Agent's read-only investigation tools.
+rollbackExecutor:
+  image: eacp-rollback-executor:local
+
 postgres:
   image: pgvector/pgvector:pg16
   storage: 1Gi

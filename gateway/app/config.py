@@ -48,3 +48,8 @@ OTEL_EXPORTER_OTLP_ENDPOINT = os.environ.get(
 # Part 13 — Incident Agent reads Prometheus the same way (host.docker.internal,
 # same cross-network reasoning as Jaeger above).
 PROMETHEUS_URL = os.environ.get("PROMETHEUS_URL", "http://host.docker.internal:9090")
+
+# Part 13 — the Rollback Executor is a sibling Service in the SAME cluster
+# namespace, so a plain Kubernetes Service DNS name works here (unlike
+# Prometheus/Jaeger, which live outside kind entirely).
+ROLLBACK_EXECUTOR_URL = os.environ.get("ROLLBACK_EXECUTOR_URL", "http://rollback-executor:8001")

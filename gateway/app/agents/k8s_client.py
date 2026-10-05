@@ -93,6 +93,37 @@ async def list_recent_events(namespace: str | None = None, limit: int = 20) -> l
     ]
 
 
+async def get_recent_deploys(name: str = "gateway", namespace: str | None = None, limit: int = 10) -> list[dict]:
+    """Deploy history via the Deployment's ReplicaSets, each tagged with the
+    image it ran and the revision number — Kubernetes keeps old ReplicaSets
+    around after a rollout specifically for this. Deliberately NOT reading
+    Helm's release history (stored as Secrets) to avoid granting the agent
+    read access to Secrets, a meaningfully bigger permission than this
+    tool needs (eacp-secrets, with real API keys, lives in that same
+    category) — this gives the same "what changed and when" signal the
+    agent actually needs without ever touching Secrets.
+    """
+    ns = namespace or _get_namespace()
+    data = await _get(f"/apis/apps/v1/namespaces/{ns}/replicasets")
+    items = [
+        rs for rs in data.get("items", [])
+        if rs["metadata"].get("labels", {}).get("app") == name
+    ]
+    deploys = [
+        {
+            "revision": rs["metadata"].get("annotations", {}).get(
+                "deployment.kubernetes.io/revision"
+            ),
+            "image": rs["spec"]["template"]["spec"]["containers"][0]["image"],
+            "created_at": rs["metadata"]["creationTimestamp"],
+            "currently_active": rs["status"].get("replicas", 0) > 0,
+        }
+        for rs in items
+    ]
+    deploys.sort(key=lambda d: d["created_at"], reverse=True)
+    return deploys[:limit]
+
+
 async def get_deployment_status(name: str = "gateway", namespace: str | None = None) -> dict:
     ns = namespace or _get_namespace()
     data = await _get(f"/apis/apps/v1/namespaces/{ns}/deployments/{name}")

@@ -1,0 +1,77 @@
+# Part 13 — the Rollback Executor: a deliberately separate service from the
+# main gateway, with its OWN service account that can patch ONLY the
+# "gateway" Deployment by name, and nothing else. This is the genuine
+# infrastructure-level separation between "can investigate" (the gateway
+# pod's service account — read-only, see incident-agent-rbac.yaml) and
+# "can act" (this service's service account) — not just an application-code
+# convention. The main gateway has no write credentials of any kind.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rollback-executor
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: rollback-executor-role
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["gateway"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rollback-executor-binding
+subjects:
+  - kind: ServiceAccount
+    name: rollback-executor
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: rollback-executor-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rollback-executor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rollback-executor
+  template:
+    metadata:
+      labels:
+        app: rollback-executor
+    spec:
+      serviceAccountName: rollback-executor
+      containers:
+        - name: rollback-executor
+          image: {{ .Values.rollbackExecutor.image }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8001
+          env:
+            - name: NAMESPACE
+              value: {{ .Release.Namespace }}
+            - name: DEPLOYMENT_NAME
+              value: gateway
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 5
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rollback-executor
+spec:
+  selector:
+    app: rollback-executor
+  ports:
+    - port: 8001
