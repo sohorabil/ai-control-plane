@@ -17,6 +17,15 @@ tasks:
     quality_floor: 0.80
     latency_budget_ms: 5000
 
+  # Part 11 vendor-switch drill (2026-10-05): bedrock WAS primary here,
+  # simulating "this is the expensive workload actually running in
+  # production" — real BigQuery usage data showed bedrock as this project's
+  # most expensive provider by cost/request. After a 20%-weighted canary of
+  # workers_ai proved out (87.9-90.9% quality vs bedrock's 87.9%, at $0 vs
+  # ~$0.00048/request), FULLY SWITCHED workers_ai to primary below. bedrock
+  # remains in the list as a fallback, not removed, in case workers_ai ever
+  # degrades. See evals/vendor_switch_drill_2026-10-05.md for the full
+  # before/after record.
   support_chat:
     candidates:
       - workers_ai
@@ -62,8 +71,15 @@ cache:
 # fully switching over. Set weight to 0 to disable; the eval-driven rollback
 # script (evals/canary_check.py) sets it back to 0 automatically if the
 # candidate's score falls below quality_floor.
+#
+# Part 11 vendor-switch drill (2026-10-05): canaried workers_ai in on
+# support_chat at 20% weight, proved it out (real traffic split 13 bedrock /
+# 7 workers_ai across 20 live requests — genuine random routing, not just
+# the eval), then fully switched (see support_chat.candidates above).
+# Canary weight reset to 0 now that the switch is complete, not partial.
+# See evals/vendor_switch_drill_2026-10-05.md for the full record.
 canary:
-  task: chat
-  primary: workers_ai
-  candidate: openai
+  task: support_chat
+  primary: bedrock
+  candidate: workers_ai
   candidate_weight: 0.0
