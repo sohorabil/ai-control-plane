@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel
 
+from app.agents import analyst_agent
 from app.auth import authenticate_app, check_provider_allowed
 from app.config import EDGE_SECRET
 from app.db import AuditLog, SessionLocal, Usage, init_db
@@ -505,6 +506,71 @@ async def rag_ask(req: RagAskRequest):
         "strategy": req.strategy,
         "cost_usd": cost_usd("vertex", result.input_tokens, result.output_tokens),
     }
+
+
+class AnalystAskRequest(BaseModel):
+    question: str
+
+
+@app.post("/v1/agent/analyst/ask")
+async def agent_analyst_ask(req: AnalystAskRequest):
+    """Part 12's Analyst Agent, called directly — bypasses the router below.
+    Use /v1/ask instead for a natural-language question that could be either
+    a data question or a document question.
+    """
+    result = await analyst_agent.ask(vertex, req.question)
+    return {
+        "question": result.question,
+        "sql": result.sql,
+        "answer": result.answer,
+        "status": result.status,
+        "rows": result.rows,
+        "columns": result.columns,
+        "bytes_scanned": result.bytes_scanned,
+    }
+
+
+class RouterAskRequest(BaseModel):
+    question: str
+
+
+class RouterDecision(BaseModel):
+    route: str  # "documents" | "data"
+
+
+@app.post("/v1/ask")
+async def router_ask(req: RouterAskRequest):
+    """Part 12's router: one endpoint for any natural-language question,
+    deciding whether it's a DOCUMENT question (routes to the RAG system,
+    Part 7) or a DATA question (routes to the Analyst Agent, this part) —
+    so a non-technical person never has to know which backend answers
+    their question, only that they asked one.
+    """
+    router_prompt = (
+        "Decide whether this question should be answered by searching "
+        "internal POLICY/RUNBOOK DOCUMENTS, or by querying a DATA table of "
+        "AI gateway usage/cost records (team, provider, model, cost, tokens, "
+        "latency). Respond with ONLY valid JSON: {\"route\": \"documents\"} "
+        "or {\"route\": \"data\"}, no other text.\n\n"
+        f"Question: {req.question}"
+    )
+
+    try:
+        decision, _ = await chat_structured(vertex, router_prompt, RouterDecision)
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=f"router could not decide: {exc}")
+
+    if decision.route == "data":
+        result = await analyst_agent.ask(vertex, req.question)
+        return {
+            "routed_to": "data",
+            "answer": result.answer,
+            "sql": result.sql,
+            "status": result.status,
+        }
+    else:
+        rag_result = await rag_ask(RagAskRequest(question=req.question))
+        return {"routed_to": "documents", **rag_result}
 
 
 @app.get("/playground", response_class=HTMLResponse)
