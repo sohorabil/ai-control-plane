@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from app.agents import analyst_agent, incident_agent
 from app.auth import authenticate_app, check_provider_allowed
-from app.config import EDGE_SECRET, ROLLBACK_EXECUTOR_URL
+from app.config import EDGE_SECRET, ROLLBACK_EXECUTOR_URL, TRACING_ENABLED
 from app.db import AuditLog, Feedback, SessionLocal, Usage, init_db
 from app.guardrails import check_prompt_injection, redact_pii, scan_for_pii
 from app.metrics import record_cache_lookup, record_fallback, record_request
@@ -23,7 +23,8 @@ from app.structured import chat_structured, extract_structured_from_document
 from app.tracing import provider_span, setup_tracing
 
 app = FastAPI(title="AI Control Plane Gateway")
-setup_tracing(app)
+if TRACING_ENABLED:
+    setup_tracing(app)
 
 PROVIDERS = {
     "mock": mock,

@@ -44,6 +44,13 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 OTEL_EXPORTER_OTLP_ENDPOINT = os.environ.get(
     "OTEL_EXPORTER_OTLP_ENDPOINT", "http://host.docker.internal:4318"
 )
+# Lets an environment opt out of tracing entirely when no collector exists
+# there at all (e.g. this project's real-EKS demo, which never stood up a
+# Jaeger instance — tracing was already proven locally in Part 11). Without
+# this, every request pays for a failed export attempt and that failure
+# shows up as log noise an on-call engineer (or the Incident Agent) could
+# mistake for the actual incident.
+TRACING_ENABLED = os.environ.get("TRACING_ENABLED", "true").lower() == "true"
 
 # Part 13 — Incident Agent reads Prometheus the same way (host.docker.internal,
 # same cross-network reasoning as Jaeger above).

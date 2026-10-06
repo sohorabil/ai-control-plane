@@ -1,0 +1,31 @@
+# Part 13 (AWS) — same read-only RBAC as the local kind chart
+# (k8s/eacp-chart/templates/incident-agent-rbac.yaml), ported as plain YAML
+# because eks-manifests/ isn't a Helm release — bound to "eacp-gateway" here
+# (not "default") since that's the service account the real EKS gateway
+# Deployment actually runs as (see service-account.yaml, used for Pod
+# Identity). Still genuinely read-only at the Kubernetes API level: no write
+# verbs anywhere, namespace-scoped only.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: incident-agent-readonly
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: incident-agent-readonly-binding
+subjects:
+  - kind: ServiceAccount
+    name: eacp-gateway
+    namespace: default
+roleRef:
+  kind: Role
+  name: incident-agent-readonly
+  apiGroup: rbac.authorization.k8s.io

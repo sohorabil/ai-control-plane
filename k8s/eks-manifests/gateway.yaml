@@ -15,7 +15,7 @@ spec:
       serviceAccountName: eacp-gateway
       containers:
         - name: gateway
-          image: 123153903243.dkr.ecr.us-east-1.amazonaws.com/eacp-gateway:latest
+          image: 123153903243.dkr.ecr.us-east-1.amazonaws.com/eacp-gateway:part13-aws-v3
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
@@ -60,6 +60,18 @@ spec:
               value: "us-central1"
             - name: GOOGLE_APPLICATION_CREDENTIALS
               value: "/app/wif-credential-config.json"
+            # Part 13 — Prometheus runs in-cluster here (prometheus.yaml),
+            # not via host.docker.internal like local dev (kind pods reach
+            # a Docker-hosted Prometheus; EKS pods can't).
+            - name: PROMETHEUS_URL
+              value: "http://prometheus:9090"
+            # No Jaeger/OTel collector deployed to EKS for this demo (out of
+            # scope — Part 11 already proved tracing locally). Disabling
+            # tracing outright, rather than pointing it at an unreachable
+            # endpoint, avoids polluting both logs and the Incident Agent's
+            # evidence with a cosmetic, unrelated connection error.
+            - name: TRACING_ENABLED
+              value: "false"
           readinessProbe:
             httpGet:
               path: /health

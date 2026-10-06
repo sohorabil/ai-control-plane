@@ -30,7 +30,7 @@ async def chat(prompt: str) -> ChatResult:
     payload = {"contents": [{"role": "user", "parts": [{"text": prompt}]}]}
 
     start = time.perf_counter()
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(VERTEX_URL, headers=headers, json=payload)
         resp.raise_for_status()
         data = resp.json()
@@ -93,7 +93,7 @@ async def embed(texts: list[str]) -> list[list[float]]:
     headers = {"Authorization": f"Bearer {get_access_token()}"}
     payload = {"instances": [{"content": t} for t in texts]}
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(EMBEDDING_URL, headers=headers, json=payload)
         resp.raise_for_status()
         data = resp.json()
@@ -105,7 +105,7 @@ async def chat_stream(prompt: str) -> AsyncIterator[str]:
     headers = {"Authorization": f"Bearer {get_access_token()}"}
     payload = {"contents": [{"role": "user", "parts": [{"text": prompt}]}]}
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         async with client.stream(
             "POST", VERTEX_STREAM_URL, headers=headers, json=payload
         ) as resp:

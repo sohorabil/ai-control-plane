@@ -69,3 +69,16 @@ resource "aws_eks_pod_identity_association" "gateway" {
   service_account = "eacp-gateway"
   role_arn        = data.aws_iam_role.eacp_gateway.arn
 }
+
+# The association above only creates the IAM-role-to-service-account mapping.
+# Pods still can't fetch credentials from it until the Pod Identity Agent
+# DaemonSet is actually running in-cluster to serve the
+# 169.254.170.23/v1/credentials endpoint each pod calls. Missing this addon
+# causes every boto3 client() call to hang until CredentialRetrievalError
+# (connect timeout) — caught during Part 13's real-AWS deploy when the
+# gateway crash-looped on import because bedrock.py builds its client eagerly
+# at module load time.
+resource "aws_eks_addon" "pod_identity_agent" {
+  cluster_name = aws_eks_cluster.main.name
+  addon_name   = "eks-pod-identity-agent"
+}
