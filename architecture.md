@@ -22,6 +22,58 @@ Every hop this: Worker never talks to a provider directly; the gateway never tru
 without a valid `x-app-key` (checked against the `apps` table, see Auth below); providers are
 swappable behind `app/providers/base.py`'s shared interface without touching routing logic.
 
+## Full system diagram
+
+The ASCII path above is the Part 1 core. By Part 13 the real system looks like this — every box
+below is something actually built and verified, not aspirational:
+
+```mermaid
+flowchart TD
+    client[Client app] -->|x-client-key| worker[Cloudflare Worker<br/>edge auth + rate limit]
+    worker -->|+ EDGE_SECRET| tunnel[Cloudflare Tunnel]
+    tunnel --> gateway[FastAPI Gateway<br/>auth · guardrails · routing · telemetry]
+
+    gateway -->|x-app-key checked| auth[(Postgres: apps, usage,<br/>audit_log, feedback)]
+    gateway -->|cache · breaker · rate limit| redis[(Redis)]
+    gateway -->|PII redact · injection check| guardrails[Guardrails<br/>Llama Guard + heuristics]
+
+    gateway --> router{"/v1/ask router<br/>(LLM classifies)"}
+    router -->|documents| rag[RAG: hybrid search<br/>+ rerank]
+    router -->|data| analyst[Analyst Agent<br/>SQL validator -> BigQuery]
+    rag --> pgvector[(pgvector: doc_chunks)]
+    analyst --> bq[(BigQuery)]
+
+    gateway --> providers{Provider adapters}
+    providers --> bedrock[AWS Bedrock<br/>Claude, via Pod Identity]
+    providers --> vertex[GCP Vertex<br/>Gemini, via WIF]
+    providers --> openai[OpenAI<br/>via AI Gateway]
+    providers --> workersai[Workers AI<br/>Llama]
+    providers --> mock[mock<br/>free, deterministic]
+
+    gateway -.->|/metrics| prometheus[Prometheus] --> grafana[Grafana]
+    gateway -.->|OTLP traces| jaeger[Jaeger]
+    usage_export[Daily export job] --> bq
+
+    incident[Incident Copilot] -->|read-only| k8sapi[Kubernetes API<br/>pods/logs/events/deploys]
+    incident -->|read-only| prometheus
+    incident -->|propose + cite evidence| human{{Human approval}}
+    human -->|approved_by required| rollback[Rollback Executor<br/>separate ServiceAccount, patch-only]
+    rollback -->|kubectl patch| gateway
+
+    ci[Jenkins CI/CD] -->|eval gate + Trivy + AI review| staging[kind: eacp-staging]
+    staging -->|promote| prod[kind: eacp-prod /<br/>real EKS]
+
+    classDef aws fill:#ff9900,color:#000
+    classDef gcp fill:#4285f4,color:#fff
+    classDef free fill:#2ecc71,color:#000
+    class bedrock,k8sapi aws
+    class vertex,bq gcp
+    class mock,workersai free
+```
+
+Color key: orange = AWS-billed, blue = GCP-billed, green = free/local. Everything else (Worker,
+Tunnel, gateway, Postgres, Redis, Jenkins) runs free either on Cloudflare's free tier or locally.
+
 ## Auth — three separate trust chains, don't conflate them
 
 1. **Edge (Worker -> Gateway)**: `EDGE_SECRET`, a shared secret the Worker injects and the
