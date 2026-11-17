@@ -25,6 +25,26 @@ four internal customers:
 - **Engineering** — CI/CD with an AI-written-code quality gate, Trivy security scanning, and
   automated promotion/rollback
 
+## Results at a glance
+
+A 33-case golden test set (exact-match, LLM-judged and structured-output cases), scored against all four providers:
+
+| Provider | Quality score | Cost/request | Avg latency |
+|---|---|---|---|
+| Workers AI (Llama) | 88% | $0 | 571 ms |
+| Vertex (Gemini Flash) | 91% | $0.0005 | 3,525 ms |
+| Bedrock (Claude Haiku) | 88% | $0.0088 | 1,126 ms |
+| OpenAI (gpt-4o-mini) | 85% | $0.001 | 1,036 ms |
+
+What the platform proved:
+
+- **Cost cut with no quality loss:** a canaried, eval-proven switch moved the `support_chat` workload from Bedrock to Workers AI (90.9% vs. 87.9% baseline) at zero marginal cost, with Bedrock kept as fallback ([ADR 0005](docs/adr/0005-workers-ai-over-bedrock-for-support-chat.md)).
+- **The eval gate works:** a deliberately corrupted golden set failed CI at the gate stage, and production was untouched.
+- **Safety in code, not prompts:** a prompt-injection attempt got the model to write a destructive SQL query; the code-level validator refused it.
+- **Human approval enforced by infrastructure:** rollbacks run only through a separately privileged service after a named person approves.
+
+Full numbers and recommendation: [REPORT.md](REPORT.md).
+
 ## Request path
 
 ```
@@ -104,6 +124,12 @@ torn down (`terraform destroy`) in the same session — never left running:
   [`PROGRESS.md`](PROGRESS.md) Part 13 for the full list)
 
 Total real-AWS spend across both sessions: **under $4**, well inside the project's $20 cap.
+
+## How I built this
+
+I designed the architecture and broke the platform into 14 parts, each with a clear goal and a verification step. I directed the implementation with Claude Code under the house rules in [CLAUDE.md](CLAUDE.md) (secrets, cost discipline, no unapproved cloud spend), then reviewed, ran and tested every part before moving on. [PROGRESS.md](PROGRESS.md) logs every tool choice, every real bug and every verification result.
+
+What didn't work is documented too: Vertex via cross-cloud identity on real EKS is still unresolved, and the real-AWS sessions surfaced three production gaps that the local cluster couldn't.
 
 ## Status
 
